@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTeses, useDeleteTese } from '@/hooks/useTeses'
 import { useProfiles } from '@/hooks/useProfile'
 import { useAuth } from '@/hooks/useAuth'
+import { useFavorites, useToggleFavorite } from '@/hooks/useFavorites'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -42,6 +43,7 @@ import {
   ArrowUpDown,
   User,
   PieChart,
+  Star,
 } from 'lucide-react'
 import {
   AlertDialog,
@@ -74,7 +76,13 @@ export default function Dashboard() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [teseToDelete, setTeseToDelete] = useState<string | null>(null)
   const [showMetrics, setShowMetrics] = useState(false)
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
   const { signOut, isAdmin, profile, canDeleteTeses, canEditAllTeses, user, isEstagiario } = useAuth()
+  
+  // Favoritos
+  const { data: favoritos } = useFavorites()
+  const { toggleFavorite, isLoading: isTogglingFavorite } = useToggleFavorite()
+  const favoriteIds = useMemo(() => favoritos?.map(f => f.tese_id) || [], [favoritos])
   const navigate = useNavigate()
   const { toast } = useToast()
   const deleteMutation = useDeleteTese()
@@ -117,6 +125,20 @@ export default function Dashboard() {
   const assuntosCount = new Set(
     data?.data.flatMap((t) => t.assuntos || []).filter(Boolean) || []
   ).size
+
+  // Filtrar por favoritos
+  const filteredTeses = useMemo(() => {
+    if (!data?.data) return []
+    if (!showFavoritesOnly) return data.data
+    return data.data.filter(tese => favoriteIds.includes(tese.id))
+  }, [data?.data, showFavoritesOnly, favoriteIds])
+
+  // Handler para toggle favorito
+  const handleToggleFavorite = async (teseId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (isTogglingFavorite) return
+    await toggleFavorite(teseId)
+  }
 
   // Métricas para gráficos
   const metrics = useMemo(() => {
@@ -581,6 +603,19 @@ export default function Dashboard() {
                   </SelectContent>
                 </Select>
                 
+                {/* Botão Favoritos */}
+                <Button
+                  variant={showFavoritesOnly ? 'default' : 'outline'}
+                  onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+                  className={showFavoritesOnly 
+                    ? 'bg-yellow-500 hover:bg-yellow-600 text-black' 
+                    : 'bg-white text-black border-gray-300 hover:bg-gray-200 hover:text-black'
+                  }
+                >
+                  <Star className={`h-4 w-4 mr-2 ${showFavoritesOnly ? 'fill-current' : ''}`} />
+                  Favoritos {favoriteIds.length > 0 && `(${favoriteIds.length})`}
+                </Button>
+                
                 {/* Botão Métricas */}
                 <Button
                   variant={showMetrics ? 'default' : 'outline'}
@@ -815,50 +850,100 @@ export default function Dashboard() {
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Checkbox
-                  checked={selectedTeses.size === data.data.length && data.data.length > 0}
+                  checked={selectedTeses.size === filteredTeses.length && filteredTeses.length > 0}
                   onCheckedChange={toggleSelectAll}
                 />
                 <span className="text-sm text-white">Selecionar todas</span>
+                {showFavoritesOnly && (
+                  <span className="ml-2 text-yellow-400 text-sm flex items-center gap-1">
+                    <Star className="h-4 w-4 fill-current" />
+                    Mostrando apenas favoritos
+                  </span>
+                )}
               </div>
             </div>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {data.data.map((tese) => (
-                <TeseCard
-                  key={tese.id}
-                  tese={tese}
-                  isSelected={selectedTeses.has(tese.id)}
-                  onSelect={() => toggleSelectTese(tese.id)}
-                  onEdit={() => handleEditSingle(tese.id)}
-                  onDelete={(e) => handleDeleteClick(tese.id, e)}
-                  canDelete={!isEstagiario && (canDeleteTeses || tese.user_id === user?.id)}
-                  canEdit={canEditAllTeses || tese.user_id === user?.id}
-                  creatorName={getCreatorName(tese.user_id)}
-                />
-              ))}
-            </div>
+            {filteredTeses.length === 0 && showFavoritesOnly ? (
+              <Card className="border shadow-xl !bg-[#101f2e] !border-[#101f2e]">
+                <CardContent className="py-12 text-center">
+                  <Star className="mx-auto mb-4 h-12 w-12 text-yellow-400" />
+                  <h3 className="text-lg font-semibold text-white mb-2">Nenhum favorito ainda</h3>
+                  <p className="text-white/60">Clique na estrela nas teses para adicionar aos favoritos</p>
+                  <Button
+                    onClick={() => setShowFavoritesOnly(false)}
+                    className="mt-4"
+                    variant="outline"
+                  >
+                    Ver todas as teses
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {filteredTeses.map((tese) => (
+                  <TeseCard
+                    key={tese.id}
+                    tese={tese}
+                    isSelected={selectedTeses.has(tese.id)}
+                    onSelect={() => toggleSelectTese(tese.id)}
+                    onEdit={() => handleEditSingle(tese.id)}
+                    onDelete={(e) => handleDeleteClick(tese.id, e)}
+                    canDelete={!isEstagiario && (canDeleteTeses || tese.user_id === user?.id)}
+                    canEdit={canEditAllTeses || tese.user_id === user?.id}
+                    creatorName={getCreatorName(tese.user_id)}
+                    isFavorite={favoriteIds.includes(tese.id)}
+                    onToggleFavorite={handleToggleFavorite}
+                  />
+                ))}
+              </div>
+            )}
           </>
         ) : (
           <>
             {/* List View */}
-            <Card className="border shadow-xl !bg-[#101f2e] !border-[#101f2e]">
-              <CardContent className="p-0">
-                <div className="divide-y" style={{ borderColor: '#101f2e' }}>
-                  {data.data.map((tese) => (
-                    <TeseListItem
-                      key={tese.id}
-                      tese={tese}
-                      isSelected={selectedTeses.has(tese.id)}
-                      onSelect={() => toggleSelectTese(tese.id)}
-                      onEdit={() => handleEditSingle(tese.id)}
-                      onDelete={(e) => handleDeleteClick(tese.id, e)}
-                      canDelete={!isEstagiario && (canDeleteTeses || tese.user_id === user?.id)}
-                      canEdit={canEditAllTeses || tese.user_id === user?.id}
-                      creatorName={getCreatorName(tese.user_id)}
-                    />
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+            {showFavoritesOnly && (
+              <div className="mb-4 flex items-center gap-2 text-yellow-400 text-sm">
+                <Star className="h-4 w-4 fill-current" />
+                Mostrando apenas favoritos
+              </div>
+            )}
+            {filteredTeses.length === 0 && showFavoritesOnly ? (
+              <Card className="border shadow-xl !bg-[#101f2e] !border-[#101f2e]">
+                <CardContent className="py-12 text-center">
+                  <Star className="mx-auto mb-4 h-12 w-12 text-yellow-400" />
+                  <h3 className="text-lg font-semibold text-white mb-2">Nenhum favorito ainda</h3>
+                  <p className="text-white/60">Clique na estrela nas teses para adicionar aos favoritos</p>
+                  <Button
+                    onClick={() => setShowFavoritesOnly(false)}
+                    className="mt-4"
+                    variant="outline"
+                  >
+                    Ver todas as teses
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="border shadow-xl !bg-[#101f2e] !border-[#101f2e]">
+                <CardContent className="p-0">
+                  <div className="divide-y" style={{ borderColor: '#101f2e' }}>
+                    {filteredTeses.map((tese) => (
+                      <TeseListItem
+                        key={tese.id}
+                        tese={tese}
+                        isSelected={selectedTeses.has(tese.id)}
+                        onSelect={() => toggleSelectTese(tese.id)}
+                        onEdit={() => handleEditSingle(tese.id)}
+                        onDelete={(e) => handleDeleteClick(tese.id, e)}
+                        canDelete={!isEstagiario && (canDeleteTeses || tese.user_id === user?.id)}
+                        canEdit={canEditAllTeses || tese.user_id === user?.id}
+                        creatorName={getCreatorName(tese.user_id)}
+                        isFavorite={favoriteIds.includes(tese.id)}
+                        onToggleFavorite={handleToggleFavorite}
+                      />
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </>
         )}
 
@@ -935,6 +1020,8 @@ function TeseCard({
   canDelete,
   canEdit,
   creatorName,
+  isFavorite,
+  onToggleFavorite,
 }: {
   tese: Tese
   isSelected: boolean
@@ -944,6 +1031,8 @@ function TeseCard({
   canDelete: boolean
   canEdit: boolean
   creatorName: string | null
+  isFavorite: boolean
+  onToggleFavorite: (teseId: string, e: React.MouseEvent) => void
 }) {
   return (
     <Card
@@ -956,7 +1045,17 @@ function TeseCard({
     >
       <CardContent className="p-5">
         <div className="mb-3 flex items-start justify-between">
-          <Checkbox checked={isSelected} onCheckedChange={onSelect} />
+          <div className="flex items-center gap-2">
+            <Checkbox checked={isSelected} onCheckedChange={onSelect} />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => onToggleFavorite(tese.id, e)}
+              className={`h-7 w-7 p-0 ${isFavorite ? 'text-yellow-400 hover:text-yellow-300' : 'text-white/50 hover:text-yellow-400'}`}
+            >
+              <Star className={`h-4 w-4 ${isFavorite ? 'fill-current' : ''}`} />
+            </Button>
+          </div>
           <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             {canEdit && (
               <Button
@@ -1044,6 +1143,8 @@ function TeseListItem({
   canDelete,
   canEdit,
   creatorName,
+  isFavorite,
+  onToggleFavorite,
 }: {
   tese: Tese
   isSelected: boolean
@@ -1053,6 +1154,8 @@ function TeseListItem({
   canDelete: boolean
   canEdit: boolean
   creatorName: string | null
+  isFavorite: boolean
+  onToggleFavorite: (teseId: string, e: React.MouseEvent) => void
 }) {
   return (
     <div
@@ -1061,6 +1164,14 @@ function TeseListItem({
       }`}
     >
       <Checkbox checked={isSelected} onCheckedChange={onSelect} />
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={(e) => onToggleFavorite(tese.id, e)}
+        className={`h-8 w-8 p-0 ${isFavorite ? 'text-yellow-400 hover:text-yellow-300' : 'text-white/50 hover:text-yellow-400'}`}
+      >
+        <Star className={`h-4 w-4 ${isFavorite ? 'fill-current' : ''}`} />
+      </Button>
       <div className="flex-1">
         <div className="mb-1 flex items-center gap-2">
           {tese.area && (
