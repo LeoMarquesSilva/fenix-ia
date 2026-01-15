@@ -259,7 +259,7 @@ export default function Dashboard() {
         <div className="container mx-auto flex items-center justify-between px-4 py-4">
           <div className="flex items-center gap-3">
             <img 
-              src="/assets/logos/logo-fenix-ia-10.png" 
+              src="/assets/logos/LOGO-HORIZONTAL-AZUL.png" 
               alt="Fênix I.A" 
               className="h-10 w-auto"
               onError={(e) => {

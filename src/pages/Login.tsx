@@ -85,11 +85,11 @@ export default function Login() {
     }}>
       <Card className="w-full max-w-md border shadow-2xl backdrop-blur-xl" style={{ borderColor: '#101f2e', backgroundColor: '#101f2e' }}>
         <CardHeader className="space-y-1 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center">
+          <div className="mx-auto mb-4 flex items-center justify-center">
             <img 
-              src="/assets/logos/logo-fenix-ia-10.png" 
+              src="/assets/logos/LOGO-HORIZONTAL-BRANCO.png" 
               alt="Fênix I.A" 
-              className="h-16 w-auto"
+              className="h-14 w-auto"
               onError={(e) => {
                 const target = e.target as HTMLImageElement
                 target.style.display = 'none'
