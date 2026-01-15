@@ -259,7 +259,7 @@ export default function Dashboard() {
         <div className="container mx-auto flex items-center justify-between px-4 py-4">
           <div className="flex flex-col items-start">
             <img 
-              src="/assets/logos/LOGO-HORIZONTAL-AZUL.png" 
+              src="/assets/logos/logo-horizontal-azul-fenix.png" 
               alt="Fênix I.A" 
               className="h-12 w-auto"
               onError={(e) => {
@@ -275,7 +275,6 @@ export default function Dashboard() {
                 }
               }}
             />
-            <p className="text-xs text-gray-500 mt-1 ml-1">Banco de Teses Jurídicas</p>
           </div>
           <div className="flex items-center gap-2">
             {/* Badge de Role e Perfil */}
