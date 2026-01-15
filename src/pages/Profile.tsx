@@ -39,7 +39,6 @@ export default function Profile() {
   
   const [nome, setNome] = useState(profile?.nome || '')
   const [area, setArea] = useState<AreaDireito>(profile?.area as AreaDireito || null)
-  const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false)
@@ -146,7 +145,6 @@ export default function Profile() {
         description: 'Sua senha foi alterada com sucesso.',
       })
 
-      setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
     } catch (error: any) {
