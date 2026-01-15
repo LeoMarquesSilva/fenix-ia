@@ -97,7 +97,6 @@ Agora, crie uma tese jurídica baseada no seguinte prompt do usuário:`
     // Vamos tentar parsear como JSON primeiro, senão usar o texto completo
     let titulo = 'Tese Gerada por IA'
     let descricao = 'Tese jurídica gerada automaticamente com base no prompt fornecido.'
-    let texto_conteudo = content
     let assuntos: string[] = []
 
     // Tentar extrair informações estruturadas
@@ -107,7 +106,6 @@ Agora, crie uma tese jurídica baseada no seguinte prompt do usuário:`
         const parsed = JSON.parse(jsonMatch[1])
         titulo = parsed.titulo || titulo
         descricao = parsed.descricao || descricao
-        texto_conteudo = parsed.texto_conteudo || parsed.conteudo || content
         assuntos = parsed.assuntos || []
       } else {
         // Tentar extrair título do início do texto

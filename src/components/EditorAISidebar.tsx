@@ -48,7 +48,7 @@ export function EditorAISidebar({ editor, tese, onUpdateContent }: EditorAISideb
   const [activeTab, setActiveTab] = useState('chat')
   const [documentos, setDocumentos] = useState<File[]>([])
   const [modelos, setModelos] = useState<File[]>([])
-  const [jurisprudencia, setJurisprudencia] = useState<string[]>([])
+  const [_jurisprudencia, _setJurisprudencia] = useState<string[]>([])
   const [webSearchQuery, setWebSearchQuery] = useState('')
   const [webSearchResults, setWebSearchResults] = useState<WebSearchResult[]>([])
   const [isSearchingWeb, setIsSearchingWeb] = useState(false)
@@ -431,8 +431,7 @@ Quando o usuário pedir para aplicar mudanças, forneça o HTML formatado.`,
                   <button
                     key={option.value}
                     type="button"
-                    className="w-full text-left px-4 py-2 text-sm"
-                    className="text-white"
+                    className="w-full text-left px-4 py-2 text-sm text-white"
                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#101f2e'}
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                     onClick={() => handleAtMenuSelect(option.value)}
@@ -449,8 +448,7 @@ Quando o usuário pedir para aplicar mudanças, forneça o HTML formatado.`,
                   <button
                     key={option.value}
                     type="button"
-                    className="w-full text-left px-4 py-2 text-sm"
-                    className="text-white"
+                    className="w-full text-left px-4 py-2 text-sm text-white"
                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#101f2e'}
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                     onClick={() => handleSlashMenuSelect(option.value)}
@@ -599,7 +597,7 @@ Quando o usuário pedir para aplicar mudanças, forneça o HTML formatado.`,
               </Button>
             </div>
             <div className="space-y-2">
-              {jurisprudencia.length === 0 && (
+              {_jurisprudencia.length === 0 && (
                 <p className="text-xs text-center py-4 text-white">
                   Nenhuma jurisprudência selecionada
                 </p>

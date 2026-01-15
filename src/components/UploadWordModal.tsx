@@ -23,7 +23,6 @@ import {
 import { useToast } from '@/components/ui/use-toast'
 import { Upload, FileText, Loader2 } from 'lucide-react'
 import type { TeseInsert } from '@/types/supabase'
-import { supabase } from '@/lib/supabase'
 import { generateIdentificador } from '@/lib/generateIdentificador'
 import { generateAssuntosEDescricao } from '@/lib/openai'
 
@@ -190,8 +189,6 @@ export function UploadWordModal({ open, onOpenChange }: UploadWordModalProps) {
                   }
                 })
               }),
-              // Preservar formatação de parágrafo (alinhamento, recuos, etc)
-              preserveEmptyParagraphs: true,
             }
           )
           

@@ -9,7 +9,7 @@ export async function testConnection() {
     console.log('📍 URL:', import.meta.env.VITE_SUPABASE_URL ? '✅ Configurada' : '❌ Não configurada')
     
     // Teste 1: Verificar autenticação básica
-    const { data: authData, error: authError } = await supabase.auth.getSession()
+    const { error: authError } = await supabase.auth.getSession()
     
     // Ignorar erros de abort silenciosamente
     if (authError) {
@@ -29,7 +29,7 @@ export async function testConnection() {
     }
     
     // Teste 2: Verificar se a tabela existe
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('teses')
       .select('count')
       .limit(1)

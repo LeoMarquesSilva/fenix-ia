@@ -34,7 +34,7 @@ async function createTestUser() {
   try {
     console.log('🔐 Criando usuário de teste...')
     
-    const { data, error } = await supabase.auth.admin.createUser({
+    const { error } = await supabase.auth.admin.createUser({
       email,
       password,
       email_confirm: true, // Confirmar email automaticamente

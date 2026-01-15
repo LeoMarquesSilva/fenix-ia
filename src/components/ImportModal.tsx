@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useToast } from '@/components/ui/use-toast'
-import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Upload, FileSpreadsheet, CheckCircle2 } from 'lucide-react'
 import type { TeseInsert } from '@/types/supabase'
 import { supabase } from '@/lib/supabase'
 
@@ -127,7 +127,7 @@ export function ImportModal({ open, onOpenChange }: ImportModalProps) {
         .select('identificador')
         .in('identificador', identificadores)
 
-      const existingIds = new Set(existing?.map((e) => e.identificador) || [])
+      const existingIds = new Set((existing as { identificador: string }[] | null)?.map((e) => e.identificador) || [])
 
       // Fazer upsert
       await upsertMutation.mutateAsync(teses)

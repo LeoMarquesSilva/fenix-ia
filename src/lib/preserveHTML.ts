@@ -141,8 +141,6 @@ export function compareHTML(original: string, edited: string): {
   // Contar elementos com estilos no original vs editado
   const origStyledElements = origDoc.body.querySelectorAll('[style]').length
   const editStyledElements = editDoc.body.querySelectorAll('[style]').length
-  const stylesLost = origStyledElements > editStyledElements
-
   // Se o texto não mudou e não perdemos muitos estilos, provavelmente é apenas normalização
   // Permitir pequenas diferenças (até 10% de perda de estilos)
   const styleLossRatio = origStyledElements > 0 

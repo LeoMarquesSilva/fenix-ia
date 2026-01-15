@@ -15,9 +15,8 @@ import Underline from '@tiptap/extension-underline'
 import { Color } from '@tiptap/extension-color'
 import TextStyle from '@tiptap/extension-text-style'
 import Highlight from '@tiptap/extension-highlight'
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, PageOrientation, WidthType } from 'docx'
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, PageOrientation } from 'docx'
 import { saveAs } from 'file-saver'
-import type { Tese } from '@/types/supabase'
 import { EditorAISidebar } from '@/components/EditorAISidebar'
 import { htmlToDocxElements } from '@/lib/htmlToDocx'
 import { copyHTMLToWordClipboard, copyHTMLToWordAlternative } from '@/lib/copyToWord'
@@ -523,9 +522,6 @@ export default function ThesisEditor() {
                       variant={index === activeTeseIndex ? 'default' : 'outline'}
                       size="sm"
                       onClick={() => {
-                        if (editor && activeTese) {
-                          const currentContent = editor.getHTML()
-                        }
                         setActiveTeseIndex(index)
                       }}
                       className="whitespace-nowrap"

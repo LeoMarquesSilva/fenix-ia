@@ -12,7 +12,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -26,7 +25,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { useToast } from '@/components/ui/use-toast'
 import { Sparkles, FileText, Loader2, Upload, X } from 'lucide-react'
 import type { TeseInsert } from '@/types/supabase'
-import { supabase } from '@/lib/supabase'
 
 interface AIGenerateModalProps {
   open: boolean

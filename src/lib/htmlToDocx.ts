@@ -1,4 +1,4 @@
-import { Paragraph, TextRun, HeadingLevel, AlignmentType, WidthType } from 'docx'
+import { Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx'
 
 interface TextRunData {
   text: string
@@ -721,7 +721,7 @@ function extractParagraphProps(element: HTMLElement): ParagraphData {
 /**
  * Converte string de alinhamento para AlignmentType do docx
  */
-function getAlignmentType(align: string): AlignmentType {
+function getAlignmentType(align: string): (typeof AlignmentType)[keyof typeof AlignmentType] {
   const alignLower = align.toLowerCase().trim()
   switch (alignLower) {
     case 'center':
@@ -902,7 +902,7 @@ function parseInlineStyle(style: string): Record<string, string> {
 /**
  * Função auxiliar para converter cor hexadecimal para formato docx
  */
-function hexToRgb(hex: string): string {
+export function hexToRgb(hex: string): string {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
   if (!result) return '000000'
   const r = parseInt(result[1], 16)
