@@ -257,11 +257,11 @@ export default function Dashboard() {
       {/* Header */}
       <header className="sticky top-0 z-10 border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 shadow-sm">
         <div className="container mx-auto flex items-center justify-between px-4 py-4">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col items-start">
             <img 
               src="/assets/logos/LOGO-HORIZONTAL-AZUL.png" 
               alt="Fênix I.A" 
-              className="h-10 w-auto"
+              className="h-12 w-auto"
               onError={(e) => {
                 // Fallback se a imagem não carregar
                 const target = e.target as HTMLImageElement
@@ -269,23 +269,21 @@ export default function Dashboard() {
                 const parent = target.parentElement
                 if (parent && !parent.querySelector('.fallback-icon')) {
                   const fallback = document.createElement('div')
-                  fallback.className = 'fallback-icon flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-accent shadow-md'
-                  fallback.innerHTML = '<svg class="h-5 w-5 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3z"/></svg>'
+                  fallback.className = 'fallback-icon flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-accent shadow-md'
+                  fallback.innerHTML = '<svg class="h-6 w-6 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3z"/></svg>'
                   parent.insertBefore(fallback, target)
                 }
               }}
             />
-            <div>
-              <h1 className="text-xl font-bold bg-gradient-to-r from-fenix-navy to-fenix-purple-dark bg-clip-text text-transparent">
-                Fênix I.A
-              </h1>
-              <p className="text-xs text-white">Banco de Teses Jurídicas</p>
-            </div>
+            <p className="text-xs text-gray-500 mt-1 ml-1">Banco de Teses Jurídicas</p>
           </div>
           <div className="flex items-center gap-2">
-            {/* Badge de Role */}
+            {/* Badge de Role e Perfil */}
             {profile && (
-              <div className="flex items-center gap-2 mr-2">
+              <button 
+                onClick={() => navigate('/profile')}
+                className="flex items-center gap-2 mr-2 hover:bg-gray-100 rounded-lg px-2 py-1 transition-colors"
+              >
                 <span className={`rounded-full px-2 py-1 text-xs font-medium ${
                   profile.role === 'admin' 
                     ? 'bg-red-500/20 text-red-700 border border-red-500/30' 
@@ -298,8 +296,8 @@ export default function Dashboard() {
                   <Shield className="inline h-3 w-3 mr-1" />
                   {profile.role}
                 </span>
-                <span className="text-xs text-gray-500">{profile.nome}</span>
-              </div>
+                <span className="text-xs text-gray-500 hover:text-gray-700">{profile.nome}</span>
+              </button>
             )}
             <Button
               onClick={() => setAiGenerateModalOpen(true)}

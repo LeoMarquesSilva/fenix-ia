@@ -5,6 +5,8 @@ import Login from '@/pages/Login'
 import Dashboard from '@/pages/Dashboard'
 import ThesisEditor from '@/pages/ThesisEditor'
 import UsersManagement from '@/pages/UsersManagement'
+import Profile from '@/pages/Profile'
+import RolesInfo from '@/pages/RolesInfo'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -79,6 +81,22 @@ function App() {
             element={
               <AdminRoute>
                 <UsersManagement />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <Profile />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/roles"
+            element={
+              <AdminRoute>
+                <RolesInfo />
               </AdminRoute>
             }
           />

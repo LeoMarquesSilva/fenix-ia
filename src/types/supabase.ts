@@ -18,6 +18,7 @@ export interface Database {
           email: string
           role: string
           ativo: boolean
+          area: string | null
         }
         Insert: {
           id: string
@@ -27,6 +28,7 @@ export interface Database {
           email: string
           role?: string
           ativo?: boolean
+          area?: string | null
         }
         Update: {
           id?: string
@@ -36,6 +38,7 @@ export interface Database {
           email?: string
           role?: string
           ativo?: boolean
+          area?: string | null
         }
       }
       teses: {

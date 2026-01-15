@@ -1,5 +1,7 @@
 export type UserRole = 'admin' | 'advogado' | 'estagiario' | 'supervisor'
 
+export type AreaDireito = 'Trabalhista' | 'Reestruturação' | 'Societário e Contratos' | 'Distressed Deals' | 'Cível' | null
+
 export interface Profile {
   id: string
   created_at: string
@@ -8,6 +10,7 @@ export interface Profile {
   role: UserRole
   email: string
   ativo: boolean
+  area: AreaDireito
 }
 
 export interface ProfileInsert {
@@ -16,6 +19,7 @@ export interface ProfileInsert {
   email: string
   role?: UserRole
   ativo?: boolean
+  area?: AreaDireito
 }
 
 export interface ProfileUpdate {
@@ -23,4 +27,13 @@ export interface ProfileUpdate {
   email?: string
   role?: UserRole
   ativo?: boolean
+  area?: AreaDireito
 }
+
+export const AREAS_DIREITO: AreaDireito[] = [
+  'Trabalhista',
+  'Reestruturação',
+  'Societário e Contratos',
+  'Distressed Deals',
+  'Cível'
+]
