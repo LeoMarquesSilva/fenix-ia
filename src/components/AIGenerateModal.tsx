@@ -46,6 +46,7 @@ export function AIGenerateModal({ open, onOpenChange }: AIGenerateModalProps) {
   const [prompt, setPrompt] = useState('')
   const [selectedTeses, setSelectedTeses] = useState<Set<string>>(new Set())
   const [area, setArea] = useState<string>('')
+  const [tipoTese, setTipoTese] = useState<string>('Consultivo')
   const [generating, setGenerating] = useState(false)
   const [preview, setPreview] = useState<{
     titulo: string
@@ -158,6 +159,7 @@ export function AIGenerateModal({ open, onOpenChange }: AIGenerateModalProps) {
           : null,
         texto_conteudo: preview.texto_conteudo,
         user_id: user?.id || null,
+        tipo_tese: tipoTese || 'Consultivo',
       }
 
       await createMutation.mutateAsync(teseData)
@@ -173,6 +175,7 @@ export function AIGenerateModal({ open, onOpenChange }: AIGenerateModalProps) {
       setPrompt('')
       setSelectedTeses(new Set())
       setArea('')
+      setTipoTese('Consultivo')
       setPreview(null)
       onOpenChange(false)
     } catch (error: any) {
@@ -191,6 +194,7 @@ export function AIGenerateModal({ open, onOpenChange }: AIGenerateModalProps) {
       setPrompt('')
       setSelectedTeses(new Set())
       setArea('')
+      setTipoTese('Consultivo')
       setPreview(null)
       onOpenChange(false)
     }
@@ -270,6 +274,20 @@ export function AIGenerateModal({ open, onOpenChange }: AIGenerateModalProps) {
                     {a}
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Tipo */}
+          <div className="grid gap-2">
+            <Label htmlFor="tipo-tese-ai">Tipo</Label>
+            <Select value={tipoTese} onValueChange={setTipoTese}>
+              <SelectTrigger id="tipo-tese-ai">
+                <SelectValue placeholder="Selecione o tipo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Tese">Tese</SelectItem>
+                <SelectItem value="Consultivo">Consultivo</SelectItem>
               </SelectContent>
             </Select>
           </div>

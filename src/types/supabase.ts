@@ -54,6 +54,7 @@ export interface Database {
           texto_conteudo: string | null
           link_externo: string | null
           user_id: string | null
+          tipo_tese: string | null
         }
         Insert: {
           id?: string
@@ -67,6 +68,7 @@ export interface Database {
           texto_conteudo?: string | null
           link_externo?: string | null
           user_id?: string | null
+          tipo_tese?: string | null
         }
         Update: {
           id?: string
@@ -80,6 +82,7 @@ export interface Database {
           texto_conteudo?: string | null
           link_externo?: string | null
           user_id?: string | null
+          tipo_tese?: string | null
         }
       }
     }
@@ -103,6 +106,7 @@ export interface Database {
           texto_conteudo: string | null
           link_externo: string | null
           user_id: string | null
+          tipo_tese: string | null
         }[]
       }
     }

@@ -82,6 +82,7 @@ export function ImportModal({ open, onOpenChange }: ImportModalProps) {
             const area = String(row.Área || row.area || row.Area || '')
             const assuntosStr = String(row.Assuntos || row.assuntos || row.Assuntos || '')
             const link = String(row.Link || row.link || '')
+            const tipoTese = String(row['Tipo'] || row['Tipo de Tese'] || row.tipo || row.tipo_tese || row.tipoTese || 'Consultivo')
 
             // Processar assuntos (separados por ||)
             const assuntos = assuntosStr
@@ -98,6 +99,7 @@ export function ImportModal({ open, onOpenChange }: ImportModalProps) {
               link_externo: link || null,
               texto_conteudo: null,
               user_id: user?.id || null,
+              tipo_tese: tipoTese || 'Consultivo',
             }
           })
 
@@ -174,7 +176,7 @@ export function ImportModal({ open, onOpenChange }: ImportModalProps) {
           <DialogTitle>Importar Teses do Excel</DialogTitle>
           <DialogDescription>
             Selecione um arquivo .xlsx com as colunas: Identificador, Título, Descrição, Área,
-            Assuntos (separados por ||), Link
+            Assuntos (separados por ||), Link, Tipo (opcional, opções: Tese ou Consultivo, padrão: Consultivo)
           </DialogDescription>
         </DialogHeader>
 

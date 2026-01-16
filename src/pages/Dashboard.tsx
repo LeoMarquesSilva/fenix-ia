@@ -826,8 +826,8 @@ export default function Dashboard() {
                 <Button 
                   onClick={() => setUploadWordModalOpen(true)} 
                   variant="outline"
-                  className="text-white hover:text-white"
-                  style={{ borderColor: '#101f2e' }}
+                  className="hover:text-[rgba(26,39,68,1)]"
+                  style={{ borderColor: '#101f2e', color: 'rgba(26, 39, 68, 1)' }}
                 >
                   <FileUp className="mr-2 h-4 w-4" />
                   Upload Word

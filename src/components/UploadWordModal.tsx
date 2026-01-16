@@ -48,6 +48,7 @@ export function UploadWordModal({ open, onOpenChange }: UploadWordModalProps) {
     descricao: '',
     area: '',
     assuntos: '',
+    tipo_tese: 'Consultivo',
   })
   const [isGeneratingAI, setIsGeneratingAI] = useState(false)
   const [aiGenerated, setAiGenerated] = useState(false)
@@ -279,6 +280,7 @@ export function UploadWordModal({ open, onOpenChange }: UploadWordModalProps) {
         assuntos: assuntosArray,
         texto_conteudo: htmlContent,
         user_id: user?.id || null,
+        tipo_tese: formData.tipo_tese || 'Consultivo',
       }
 
       await createMutation.mutateAsync(teseData)
@@ -297,6 +299,7 @@ export function UploadWordModal({ open, onOpenChange }: UploadWordModalProps) {
         descricao: '',
         area: '',
         assuntos: '',
+        tipo_tese: 'Consultivo',
       })
       setAiGenerated(false)
       onOpenChange(false)
@@ -322,6 +325,7 @@ export function UploadWordModal({ open, onOpenChange }: UploadWordModalProps) {
           descricao: '',
           area: '',
           assuntos: '',
+          tipo_tese: 'Consultivo',
         })
         setAiGenerated(false)
       })
@@ -438,6 +442,24 @@ export function UploadWordModal({ open, onOpenChange }: UploadWordModalProps) {
                       {area}
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="tipo_tese">Tipo</Label>
+              <Select 
+                value={formData.tipo_tese} 
+                onValueChange={(value) => {
+                  setFormData((prev) => ({ ...prev, tipo_tese: value }))
+                }}
+              >
+                <SelectTrigger id="tipo_tese">
+                  <SelectValue placeholder="Selecione o tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Tese">Tese</SelectItem>
+                  <SelectItem value="Consultivo">Consultivo</SelectItem>
                 </SelectContent>
               </Select>
             </div>
