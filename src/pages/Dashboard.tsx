@@ -63,6 +63,7 @@ export default function Dashboard() {
   const [search, setSearch] = useState('')
   const [area, setArea] = useState<string>('all')
   const [assunto, setAssunto] = useState<string>('all')
+  const [tipoTese, setTipoTese] = useState<string>('all')
   const [criadorId, setCriadorId] = useState<string>('all')
   const [dataInicio, setDataInicio] = useState<string>('')
   const [dataFim, setDataFim] = useState<string>('')
@@ -94,6 +95,7 @@ export default function Dashboard() {
     search: search || undefined,
     area: area === 'all' ? undefined : area || undefined,
     assunto: assunto === 'all' ? undefined : assunto || undefined,
+    tipoTese: tipoTese === 'all' ? undefined : tipoTese || undefined,
     criadorId: criadorId === 'all' ? undefined : criadorId || undefined,
     dataInicio: dataInicio || undefined,
     dataFim: dataFim || undefined,
@@ -486,8 +488,8 @@ export default function Dashboard() {
         <div className="mb-6 space-y-4">
           <Card className="border shadow-xl !bg-[#101f2e] !border-[#101f2e]">
             <CardContent className="pt-6">
-              {/* Linha 1: Busca, Área, Assunto */}
-              <div className="grid gap-4 md:grid-cols-4 mb-4">
+              {/* Linha 1: Busca, Área, Assunto, Tipo */}
+              <div className="grid gap-4 md:grid-cols-5 mb-4">
                 <div className="relative md:col-span-2">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white" />
                   <Input
@@ -531,6 +533,19 @@ export default function Dashboard() {
                         {a}
                       </SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+                <Select value={tipoTese} onValueChange={(value) => {
+                  setTipoTese(value)
+                  setPage(1)
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todos os tipos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os tipos</SelectItem>
+                    <SelectItem value="Tese">Tese</SelectItem>
+                    <SelectItem value="Consultivo">Consultivo</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -631,7 +646,7 @@ export default function Dashboard() {
               </div>
               
               {/* Botão Limpar Filtros */}
-              {(search || area !== 'all' || assunto !== 'all' || criadorId !== 'all' || dataInicio || dataFim) && (
+              {(search || area !== 'all' || assunto !== 'all' || tipoTese !== 'all' || criadorId !== 'all' || dataInicio || dataFim) && (
                 <div className="mt-4 flex justify-end">
                   <Button
                     variant="ghost"
@@ -640,6 +655,7 @@ export default function Dashboard() {
                       setSearch('')
                       setArea('all')
                       setAssunto('all')
+                      setTipoTese('all')
                       setCriadorId('all')
                       setDataInicio('')
                       setDataFim('')
@@ -1087,6 +1103,11 @@ function TeseCard({
           <p className={`mb-3 line-clamp-2 text-sm ${isSelected ? 'text-white/90' : 'text-white/80'}`}>{tese.descricao}</p>
         )}
         <div className="mb-3 flex flex-wrap gap-1">
+          {tese.tipo_tese && (
+            <span className={`rounded-full border px-2 py-1 text-xs font-medium ${isSelected ? 'bg-white/20 border-white/30 text-white' : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'}`}>
+              {tese.tipo_tese}
+            </span>
+          )}
           {tese.area && (
             <span className={`rounded-full border px-2 py-1 text-xs font-medium ${isSelected ? 'bg-white/20 border-white/30 text-white' : 'bg-blue-500/20 border-blue-500/30 text-blue-400'}`}>
               {tese.area}
@@ -1174,6 +1195,11 @@ function TeseListItem({
       </Button>
       <div className="flex-1">
         <div className="mb-1 flex items-center gap-2">
+          {tese.tipo_tese && (
+            <span className="rounded-full bg-emerald-500/20 border border-emerald-500/30 px-2 py-0.5 text-xs font-medium text-emerald-400">
+              {tese.tipo_tese}
+            </span>
+          )}
           {tese.area && (
             <span className="rounded-full bg-blue-500/20 border border-blue-500/30 px-2 py-0.5 text-xs font-medium text-blue-400">
               {tese.area}

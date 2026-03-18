@@ -544,6 +544,11 @@ export default function ThesisEditor() {
                     <h2 className="text-lg font-semibold">{activeTese.titulo}</h2>
                     <p className="text-sm" style={{ color: '#101f2e' }}>{activeTese.descricao}</p>
                     <div className="mt-2 flex flex-wrap gap-2">
+                      {activeTese.tipo_tese && (
+                        <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs text-emerald-700">
+                          {activeTese.tipo_tese}
+                        </span>
+                      )}
                       {activeTese.area && (
                         <span className="rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">
                           {activeTese.area}

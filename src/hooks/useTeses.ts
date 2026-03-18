@@ -6,6 +6,7 @@ interface TeseFilters {
   search?: string
   area?: string
   assunto?: string
+  tipoTese?: string
   criadorId?: string
   dataInicio?: string
   dataFim?: string
@@ -50,7 +51,7 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
 }
 
 export function useTeses(filters: TeseFilters = {}) {
-  const { search, area, assunto, criadorId, dataInicio, dataFim, ordenacao = 'recentes', page = 1, pageSize = 20 } = filters
+  const { search, area, assunto, tipoTese, criadorId, dataInicio, dataFim, ordenacao = 'recentes', page = 1, pageSize = 20 } = filters
 
   return useQuery({
     queryKey: ['teses', filters],
@@ -95,6 +96,9 @@ export function useTeses(filters: TeseFilters = {}) {
         }
         if (assunto) {
           params.push(`assuntos=cs.{${encodeURIComponent(assunto)}}`)
+        }
+        if (tipoTese) {
+          params.push(`tipo_tese=eq.${encodeURIComponent(tipoTese)}`)
         }
         if (criadorId) {
           params.push(`user_id=eq.${criadorId}`)
