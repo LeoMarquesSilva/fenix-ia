@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { useProfiles, useUpdateProfile, useDeleteProfile } from '@/hooks/useProfile'
+import { useColaboradoresPendentes, useDeleteColaboradorPendente } from '@/hooks/useColaboradoresPendentes'
 import { supabase } from '@/lib/supabase'
 import { createClient } from '@supabase/supabase-js'
 import { Button } from '@/components/ui/button'
@@ -9,7 +10,6 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/use-toast'
 import { 
-  ArrowLeft, 
   UserPlus, 
   Edit, 
   Save, 
@@ -25,7 +25,8 @@ import {
   Crown,
   Briefcase,
   GraduationCap,
-  Eye
+  Eye,
+  UserCheck
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -45,7 +46,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import type { UserRole, AreaDireito } from '@/types/profiles'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import type { UserRole, AreaDireito, ColaboradorPendente } from '@/types/profiles'
 import { AREAS_DIREITO } from '@/types/profiles'
 
 export default function UsersManagement() {
@@ -54,8 +63,10 @@ export default function UsersManagement() {
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const { data: profiles, isLoading, error, refetch } = useProfiles()
+  const { data: pendentes, refetch: refetchPendentes } = useColaboradoresPendentes()
   const updateMutation = useUpdateProfile()
   const deleteMutation = useDeleteProfile()
+  const deletePendenteMutation = useDeleteColaboradorPendente()
   const [isCreating, setIsCreating] = useState(false)
   
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -63,12 +74,15 @@ export default function UsersManagement() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [userToDelete, setUserToDelete] = useState<string | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
+  const [ativarModalOpen, setAtivarModalOpen] = useState(false)
   const [createForm, setCreateForm] = useState({ 
     nome: '', 
     email: '', 
     senha: '', 
     role: 'advogado' as UserRole,
-    area: null as AreaDireito
+    area: null as AreaDireito,
+    pendenteId: null as string | null,
+    avatarUrl: null as string | null
   })
 
   // Estatísticas
@@ -84,17 +98,20 @@ export default function UsersManagement() {
   // Redirecionar se não for admin
   if (!isAdmin) {
     return (
-      <div className="flex min-h-screen items-center justify-center relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-[#0a1628] via-[#1a2744] to-[#0f1d32]" />
-        <Card className="relative bg-white/10 backdrop-blur-xl border-white/10">
+      <div className="container mx-auto flex min-h-[50vh] max-w-lg items-center justify-center px-4 py-12">
+        <Card className="w-full border bg-card shadow-sm">
           <CardContent className="p-8 text-center">
-            <div className="mx-auto mb-4 h-16 w-16 rounded-full bg-red-500/20 flex items-center justify-center">
-              <Shield className="h-8 w-8 text-red-400" />
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10">
+              <Shield className="h-7 w-7 text-destructive" />
             </div>
-            <h2 className="text-xl font-bold mb-2 text-white">Acesso Negado</h2>
-            <p className="text-white/60 mb-6">Você não tem permissão para acessar esta página.</p>
-            <Button onClick={() => navigate('/dashboard')} className="bg-white/10 hover:bg-white/20 text-white">
-              Voltar ao Dashboard
+            <h2 className="mb-2 text-lg font-semibold text-foreground">
+              Acesso restrito
+            </h2>
+            <p className="mb-6 text-sm text-muted-foreground">
+              Apenas administradores gerenciam usuários.
+            </p>
+            <Button variant="outline" onClick={() => navigate('/dashboard')}>
+              Ir ao dashboard
             </Button>
           </CardContent>
         </Card>
@@ -174,6 +191,7 @@ export default function UsersManagement() {
             nome: createForm.nome,
             role: createForm.role,
             area: createForm.area,
+            ...(createForm.avatarUrl && { avatar_url: createForm.avatarUrl }),
           }),
         })
 
@@ -187,8 +205,14 @@ export default function UsersManagement() {
         description: `Usuário "${createForm.nome}" criado com sucesso!`,
       })
 
-      setCreateForm({ nome: '', email: '', senha: '', role: 'advogado', area: null })
-      setShowCreateForm(false)
+      if (createForm.pendenteId) {
+        await deletePendenteMutation.mutateAsync(createForm.pendenteId)
+        refetchPendentes()
+        closeAtivarModal()
+      } else {
+        setCreateForm({ nome: '', email: '', senha: '', role: 'advogado', area: null, pendenteId: null, avatarUrl: null })
+        setShowCreateForm(false)
+      }
       
       queryClient.invalidateQueries({ queryKey: ['profiles'] })
       refetch()
@@ -212,6 +236,27 @@ export default function UsersManagement() {
       ativo: profile.ativo,
       area: profile.area || null,
     })
+  }
+
+  const handleAtivarPendente = (p: ColaboradorPendente) => {
+    const area = (p.departamento && AREAS_DIREITO.includes(p.departamento as AreaDireito))
+      ? (p.departamento as AreaDireito)
+      : null
+    setCreateForm({
+      nome: p.nome,
+      email: p.email,
+      senha: '',
+      role: 'advogado',
+      area,
+      pendenteId: p.id,
+      avatarUrl: p.avatar_url || null,
+    })
+    setAtivarModalOpen(true)
+  }
+
+  const closeAtivarModal = () => {
+    setAtivarModalOpen(false)
+    setCreateForm({ nome: '', email: '', senha: '', role: 'advogado', area: null, pendenteId: null, avatarUrl: null })
   }
 
   const handleSaveEdit = async () => {
@@ -296,222 +341,172 @@ export default function UsersManagement() {
   const getRoleBadgeColor = (role: UserRole) => {
     switch (role) {
       case 'admin':
-        return 'bg-gradient-to-r from-red-500 to-orange-500 text-white'
+        return 'border border-destructive/30 bg-destructive/10 text-destructive'
       case 'supervisor':
-        return 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white'
+        return 'border border-primary/30 bg-primary/10 text-primary'
       case 'advogado':
-        return 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
+        return 'border border-fenix-purple-dark/30 bg-fenix-purple-dark/10 text-fenix-purple-dark dark:text-fenix-purple-light'
       case 'estagiario':
-        return 'bg-gradient-to-r from-green-500 to-emerald-500 text-white'
+        return 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
       default:
-        return 'bg-gray-500 text-white'
+        return 'border border-border bg-muted text-muted-foreground'
     }
   }
 
   return (
-    <div className="min-h-screen relative overflow-hidden">
-      {/* Background */}
-      <div className="fixed inset-0 bg-gradient-to-br from-[#0a1628] via-[#1a2744] to-[#0f1d32]" />
-      <div className="fixed inset-0 opacity-30">
-        <div className="absolute top-20 -left-20 w-96 h-96 bg-purple-600 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob" />
-        <div className="absolute top-40 -right-20 w-96 h-96 bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob animation-delay-2000" />
-        <div className="absolute -bottom-20 left-40 w-96 h-96 bg-indigo-600 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob animation-delay-4000" />
+    <>
+    <div className="container mx-auto max-w-7xl px-4 py-8">
+      <div className="mb-8 flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Fênix I.A · Administração
+          </p>
+          <h1 className="mt-1 flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground">
+            <Users className="h-7 w-7 text-primary" />
+            Usuários
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Cadastro, funções e áreas de atuação.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => navigate('/roles')}>
+            <Shield className="mr-2 h-4 w-4" />
+            Funções e permissões
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            disabled={isLoading}
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`}
+            />
+          </Button>
+          <Button
+            size="sm"
+            className="bg-gradient-to-r from-fenix-purple-dark to-fenix-purple-light text-white"
+            onClick={() => setShowCreateForm(!showCreateForm)}
+          >
+            <UserPlus className="mr-2 h-4 w-4" />
+            Novo usuário
+          </Button>
+        </div>
       </div>
 
-      {/* Content */}
-      <div className="relative z-10">
-        {/* Header */}
-        <header className="sticky top-0 z-20 border-b border-white/10 bg-white/5 backdrop-blur-xl">
-          <div className="container mx-auto px-4 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => navigate('/dashboard')}
-                  className="text-white/70 hover:text-white hover:bg-white/10"
-                >
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Voltar
-                </Button>
-                <div className="h-8 w-px bg-white/20" />
-                <div>
-                  <h1 className="text-xl font-bold text-white flex items-center gap-2">
-                    <Users className="h-5 w-5 text-purple-400" />
-                    Gerenciamento de Usuários
-                  </h1>
-                  <p className="text-xs text-white/50">Administre os usuários da plataforma</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <Button
-                  onClick={() => navigate('/roles')}
-                  variant="ghost"
-                  size="sm"
-                  className="text-white/70 hover:text-white hover:bg-white/10"
-                >
-                  <Shield className="mr-2 h-4 w-4" />
-                  Ver Permissões
-                </Button>
-                <Button
-                  onClick={() => refetch()}
-                  variant="ghost"
-                  size="sm"
-                  disabled={isLoading}
-                  className="text-white/70 hover:text-white hover:bg-white/10"
-                >
-                  <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-                </Button>
-                <Button
-                  onClick={() => setShowCreateForm(!showCreateForm)}
-                  className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-lg shadow-purple-500/25"
-                >
-                  <UserPlus className="mr-2 h-4 w-4" />
-                  Novo Usuário
-                </Button>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <main className="container mx-auto px-4 py-8">
+      <main className="space-y-8">
           {/* Estatísticas */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
-            <Card className="bg-white/5 border-white/10 backdrop-blur-sm hover:bg-white/10 transition-colors">
-              <CardContent className="p-4 text-center">
-                <div className="text-3xl font-bold text-white mb-1">{stats.total}</div>
-                <div className="text-xs text-white/50 flex items-center justify-center gap-1">
-                  <Users className="h-3 w-3" />
-                  Total
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="bg-white/5 border-white/10 backdrop-blur-sm hover:bg-white/10 transition-colors">
-              <CardContent className="p-4 text-center">
-                <div className="text-3xl font-bold text-red-400 mb-1">{stats.admins}</div>
-                <div className="text-xs text-white/50 flex items-center justify-center gap-1">
-                  <Crown className="h-3 w-3" />
-                  Admins
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="bg-white/5 border-white/10 backdrop-blur-sm hover:bg-white/10 transition-colors">
-              <CardContent className="p-4 text-center">
-                <div className="text-3xl font-bold text-purple-400 mb-1">{stats.advogados}</div>
-                <div className="text-xs text-white/50 flex items-center justify-center gap-1">
-                  <Briefcase className="h-3 w-3" />
-                  Advogados
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="bg-white/5 border-white/10 backdrop-blur-sm hover:bg-white/10 transition-colors">
-              <CardContent className="p-4 text-center">
-                <div className="text-3xl font-bold text-blue-400 mb-1">{stats.supervisores}</div>
-                <div className="text-xs text-white/50 flex items-center justify-center gap-1">
-                  <Eye className="h-3 w-3" />
-                  Supervisores
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="bg-white/5 border-white/10 backdrop-blur-sm hover:bg-white/10 transition-colors">
-              <CardContent className="p-4 text-center">
-                <div className="text-3xl font-bold text-green-400 mb-1">{stats.estagiarios}</div>
-                <div className="text-xs text-white/50 flex items-center justify-center gap-1">
-                  <GraduationCap className="h-3 w-3" />
-                  Estagiários
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="bg-white/5 border-white/10 backdrop-blur-sm hover:bg-white/10 transition-colors">
-              <CardContent className="p-4 text-center">
-                <div className="text-3xl font-bold text-emerald-400 mb-1">{stats.ativos}</div>
-                <div className="text-xs text-white/50 flex items-center justify-center gap-1">
-                  <CheckCircle className="h-3 w-3" />
-                  Ativos
-                </div>
-              </CardContent>
-            </Card>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+            {[
+              { n: stats.total, l: 'Total', i: Users, c: 'text-foreground' },
+              { n: stats.admins, l: 'Admins', i: Crown, c: 'text-destructive' },
+              { n: stats.advogados, l: 'Advogados', i: Briefcase, c: 'text-accent' },
+              { n: stats.supervisores, l: 'Supervisores', i: Eye, c: 'text-primary' },
+              { n: stats.estagiarios, l: 'Estagiários', i: GraduationCap, c: 'text-emerald-600 dark:text-emerald-400' },
+              { n: stats.ativos, l: 'Ativos', i: CheckCircle, c: 'text-emerald-600 dark:text-emerald-400' },
+            ].map(({ n, l, i: Icon, c }) => (
+              <Card key={l} className="border bg-card shadow-sm">
+                <CardContent className="p-4 text-center">
+                  <div className={`text-2xl font-bold tabular-nums ${c}`}>{n}</div>
+                  <div className="mt-1 flex items-center justify-center gap-1 text-xs text-muted-foreground">
+                    <Icon className="h-3 w-3" />
+                    {l}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
 
           {/* Formulário de criação */}
           {showCreateForm && (
-            <Card className="mb-8 bg-white/5 border-white/10 backdrop-blur-xl shadow-2xl">
-              <CardHeader className="border-b border-white/10">
-                <CardTitle className="text-white flex items-center gap-2">
-                  <UserPlus className="h-5 w-5 text-purple-400" />
-                  Criar Novo Usuário
+            <Card className="border bg-card shadow-sm">
+              <CardHeader className="border-b">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <UserPlus className="h-5 w-5 text-primary" />
+                  Novo usuário
                 </CardTitle>
               </CardHeader>
-              <CardContent className="p-6 space-y-6">
+              <CardContent className="space-y-6 p-6">
                 <div className="grid gap-6 md:grid-cols-2">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-white/80 flex items-center gap-2">
-                      <User className="h-4 w-4 text-purple-400" />
-                      Nome Completo
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <User className="h-4 w-4 text-muted-foreground" />
+                      Nome completo
                     </label>
                     <Input
                       value={createForm.nome}
-                      onChange={(e) => setCreateForm({ ...createForm, nome: e.target.value })}
-                      placeholder="Digite o nome completo"
-                      className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:border-purple-500"
+                      onChange={(e) =>
+                        setCreateForm({ ...createForm, nome: e.target.value })
+                      }
+                      placeholder="Nome completo"
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-white/80 flex items-center gap-2">
-                      <Mail className="h-4 w-4 text-purple-400" />
-                      Email
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <Mail className="h-4 w-4 text-muted-foreground" />
+                      E-mail
                     </label>
                     <Input
                       type="email"
                       value={createForm.email}
-                      onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
+                      onChange={(e) =>
+                        setCreateForm({ ...createForm, email: e.target.value })
+                      }
                       placeholder="email@exemplo.com"
-                      className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:border-purple-500"
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-white/80 flex items-center gap-2">
-                      <Shield className="h-4 w-4 text-purple-400" />
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <Shield className="h-4 w-4 text-muted-foreground" />
                       Senha
                     </label>
                     <Input
                       type="password"
                       value={createForm.senha}
-                      onChange={(e) => setCreateForm({ ...createForm, senha: e.target.value })}
+                      onChange={(e) =>
+                        setCreateForm({ ...createForm, senha: e.target.value })
+                      }
                       placeholder="Mínimo 6 caracteres"
-                      className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:border-purple-500"
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-white/80 flex items-center gap-2">
-                      <Crown className="h-4 w-4 text-purple-400" />
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <Crown className="h-4 w-4 text-muted-foreground" />
                       Função
                     </label>
                     <Select
                       value={createForm.role}
-                      onValueChange={(value: UserRole) => setCreateForm({ ...createForm, role: value })}
+                      onValueChange={(value: UserRole) =>
+                        setCreateForm({ ...createForm, role: value })
+                      }
                     >
-                      <SelectTrigger className="bg-white/10 border-white/20 text-white">
+                      <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="admin">👑 Admin</SelectItem>
-                        <SelectItem value="advogado">💼 Advogado</SelectItem>
-                        <SelectItem value="supervisor">👁️ Supervisor</SelectItem>
-                        <SelectItem value="estagiario">🎓 Estagiário</SelectItem>
+                        <SelectItem value="admin">Administrador</SelectItem>
+                        <SelectItem value="advogado">Advogado</SelectItem>
+                        <SelectItem value="supervisor">Supervisor</SelectItem>
+                        <SelectItem value="estagiario">Estagiário</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-white/80 flex items-center gap-2">
-                      <Briefcase className="h-4 w-4 text-purple-400" />
-                      Área do Direito
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <Briefcase className="h-4 w-4 text-muted-foreground" />
+                      Área do direito
                     </label>
                     <Select
                       value={createForm.area || '_none'}
-                      onValueChange={(value) => setCreateForm({ ...createForm, area: value === '_none' ? null : value as AreaDireito })}
+                      onValueChange={(value) =>
+                        setCreateForm({
+                          ...createForm,
+                          area: value === '_none' ? null : (value as AreaDireito),
+                        })
+                      }
                     >
-                      <SelectTrigger className="bg-white/10 border-white/20 text-white">
+                      <SelectTrigger>
                         <SelectValue placeholder="Selecione a área" />
                       </SelectTrigger>
                       <SelectContent>
@@ -523,10 +518,10 @@ export default function UsersManagement() {
                     </Select>
                   </div>
                 </div>
-                <div className="flex gap-3 pt-4 border-t border-white/10">
-                  <Button 
-                    onClick={handleCreateUser} 
-                    className="flex-1 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700" 
+                <div className="flex gap-3 border-t pt-4">
+                  <Button
+                    onClick={handleCreateUser}
+                    className="flex-1 bg-gradient-to-r from-fenix-purple-dark to-fenix-purple-light text-white"
                     disabled={isCreating}
                   >
                     {isCreating ? (
@@ -542,13 +537,12 @@ export default function UsersManagement() {
                     )}
                   </Button>
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     onClick={() => {
                       setShowCreateForm(false)
-                      setCreateForm({ nome: '', email: '', senha: '', role: 'advogado', area: null })
+                      setCreateForm({ nome: '', email: '', senha: '', role: 'advogado', area: null, pendenteId: null, avatarUrl: null })
                     }}
                     disabled={isCreating}
-                    className="text-white/70 hover:text-white hover:bg-white/10"
                   >
                     <X className="mr-2 h-4 w-4" />
                     Cancelar
@@ -560,34 +554,45 @@ export default function UsersManagement() {
 
           {/* Lista de usuários */}
           {error && (
-            <Card className="mb-6 bg-red-500/10 border-red-500/30">
-              <CardContent className="p-4 flex items-center gap-3">
-                <XCircle className="h-5 w-5 text-red-400" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-red-300">Erro ao carregar usuários</p>
-                  <p className="text-xs text-red-400/70">{error.message}</p>
+            <Card className="border-destructive/40 bg-destructive/5">
+              <CardContent className="flex items-center gap-3 p-4">
+                <XCircle className="h-5 w-5 shrink-0 text-destructive" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-destructive">
+                    Erro ao carregar usuários
+                  </p>
+                  <p className="text-xs text-muted-foreground">{error.message}</p>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => refetch()} className="border-red-500/50 text-red-300 hover:bg-red-500/20">
+                <Button size="sm" variant="outline" onClick={() => refetch()}>
                   Tentar novamente
                 </Button>
               </CardContent>
             </Card>
           )}
-          
+
           {isLoading ? (
-            <div className="flex h-64 items-center justify-center">
-              <div className="text-center">
-                <div className="mb-4 h-12 w-12 animate-spin rounded-full border-4 border-purple-500 border-t-transparent mx-auto"></div>
-                <p className="text-sm text-white/50">Carregando usuários...</p>
-              </div>
+            <div className="flex h-48 items-center justify-center">
+              <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
+          ) : profiles?.length === 0 ? (
+            <Card className="border bg-card shadow-sm">
+              <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+                <Users className="mb-4 h-12 w-12 text-muted-foreground" />
+                <p className="font-medium text-foreground">Nenhum usuário encontrado</p>
+                <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                  Crie o primeiro usuário com o botão &quot;Novo usuário&quot;.
+                </p>
+              </CardContent>
+            </Card>
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {profiles?.map((profile) => (
-                <Card 
-                  key={profile.id} 
-                  className={`bg-white/5 border-white/10 backdrop-blur-sm hover:bg-white/10 transition-all hover:scale-[1.02] ${
-                    profile.id === currentProfile?.id ? 'ring-2 ring-purple-500/50' : ''
+                <Card
+                  key={profile.id}
+                  className={`border bg-card shadow-sm transition-shadow hover:shadow-md ${
+                    profile.id === currentProfile?.id
+                      ? 'ring-2 ring-primary/30'
+                      : ''
                   }`}
                 >
                   <CardContent className="p-5">
@@ -595,22 +600,26 @@ export default function UsersManagement() {
                       <div className="space-y-4">
                         <Input
                           value={editForm.nome}
-                          onChange={(e) => setEditForm({ ...editForm, nome: e.target.value })}
-                          className="bg-white/10 border-white/20 text-white"
+                          onChange={(e) =>
+                            setEditForm({ ...editForm, nome: e.target.value })
+                          }
                           placeholder="Nome"
                         />
                         <Input
                           type="email"
                           value={editForm.email}
-                          onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                          className="bg-white/10 border-white/20 text-white"
-                          placeholder="Email"
+                          onChange={(e) =>
+                            setEditForm({ ...editForm, email: e.target.value })
+                          }
+                          placeholder="E-mail"
                         />
                         <Select
                           value={editForm.role}
-                          onValueChange={(value: UserRole) => setEditForm({ ...editForm, role: value })}
+                          onValueChange={(value: UserRole) =>
+                            setEditForm({ ...editForm, role: value })
+                          }
                         >
-                          <SelectTrigger className="bg-white/10 border-white/20 text-white">
+                          <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -624,8 +633,8 @@ export default function UsersManagement() {
                           value={editForm.area || '_none'}
                           onValueChange={(value) => setEditForm({ ...editForm, area: value === '_none' ? null : value as AreaDireito })}
                         >
-                          <SelectTrigger className="bg-white/10 border-white/20 text-white">
-                            <SelectValue placeholder="Área do Direito" />
+                          <SelectTrigger>
+                            <SelectValue placeholder="Área do direito" />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="_none">Nenhuma</SelectItem>
@@ -635,15 +644,19 @@ export default function UsersManagement() {
                           </SelectContent>
                         </Select>
                         <div className="flex gap-2">
-                          <Button onClick={handleSaveEdit} size="sm" className="flex-1 bg-green-600 hover:bg-green-700">
+                          <Button
+                            onClick={handleSaveEdit}
+                            size="sm"
+                            className="flex-1 bg-gradient-to-r from-fenix-purple-dark to-fenix-purple-light text-white"
+                          >
                             <Save className="mr-2 h-4 w-4" />
                             Salvar
                           </Button>
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="sm"
                             onClick={() => setEditingId(null)}
-                            className="text-white/70 hover:text-white hover:bg-white/10"
+                            aria-label="Cancelar edição"
                           >
                             <X className="h-4 w-4" />
                           </Button>
@@ -651,50 +664,62 @@ export default function UsersManagement() {
                       </div>
                     ) : (
                       <>
-                        <div className="flex items-start justify-between mb-4">
-                          <div className="h-12 w-12 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold text-lg">
-                            {profile.nome.charAt(0).toUpperCase()}
-                          </div>
-                          <div className="flex items-center gap-1">
+                        <div className="mb-4 flex items-start justify-between">
+                          {profile.avatar_url ? (
+                            <img
+                              src={profile.avatar_url}
+                              alt={profile.nome}
+                              className="h-12 w-12 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/15 text-lg font-bold text-primary">
+                              {profile.nome.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <div className="flex flex-wrap items-center gap-1">
                             {profile.id === currentProfile?.id && (
-                              <span className="rounded-full bg-purple-500/30 border border-purple-500/50 px-2 py-0.5 text-xs font-medium text-purple-300">
+                              <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
                                 Você
                               </span>
                             )}
                             {!profile.ativo && (
-                              <span className="rounded-full bg-red-500/30 border border-red-500/50 px-2 py-0.5 text-xs font-medium text-red-300">
+                              <span className="rounded-full border border-destructive/30 bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
                                 Inativo
                               </span>
                             )}
                           </div>
                         </div>
-                        
-                        <h3 className="font-semibold text-white mb-1 truncate">{profile.nome}</h3>
-                        
-                        <div className="flex items-center gap-2 text-sm text-white/50 mb-2">
-                          <Mail className="h-3 w-3" />
+
+                        <h3 className="mb-1 truncate font-semibold text-foreground">
+                          {profile.nome}
+                        </h3>
+
+                        <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
+                          <Mail className="h-3 w-3 shrink-0" />
                           <span className="truncate">{profile.email}</span>
                         </div>
-                        
+
                         {profile.area && (
-                          <div className="flex items-center gap-2 text-sm text-white/50 mb-3">
-                            <Briefcase className="h-3 w-3" />
+                          <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
+                            <Briefcase className="h-3 w-3 shrink-0" />
                             <span>{profile.area}</span>
                           </div>
                         )}
-                        
+
                         <div className="flex items-center justify-between">
-                          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${getRoleBadgeColor(profile.role)}`}>
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${getRoleBadgeColor(profile.role)}`}
+                          >
                             {getRoleIcon(profile.role)}
                             {profile.role}
                           </span>
-                          
+
                           <div className="flex items-center gap-1">
                             <Button
                               variant="ghost"
                               size="sm"
                               onClick={() => handleEdit(profile)}
-                              className="h-8 w-8 p-0 text-white/50 hover:text-white hover:bg-white/10"
+                              className="h-8 w-8 p-0"
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
@@ -706,7 +731,7 @@ export default function UsersManagement() {
                                   setUserToDelete(profile.id)
                                   setDeleteDialogOpen(true)
                                 }}
-                                className="h-8 w-8 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/20"
+                                className="h-8 w-8 p-0 text-destructive hover:bg-destructive/10"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -720,28 +745,181 @@ export default function UsersManagement() {
               ))}
             </div>
           )}
+
+          {/* Colaboradores pendentes */}
+          {pendentes && pendentes.length > 0 && (
+            <Card className="border bg-card shadow-sm">
+              <CardHeader className="border-b">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <UserCheck className="h-5 w-5 text-muted-foreground" />
+                  Colaboradores pendentes
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Ative e defina a função para cada colaborador.
+                </p>
+              </CardHeader>
+              <CardContent className="p-8">
+                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                  {pendentes.map((p) => (
+                    <div
+                      key={p.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border p-4"
+                    >
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
+                        {p.avatar_url ? (
+                          <img
+                            src={p.avatar_url}
+                            alt={p.nome}
+                            className="h-10 w-10 shrink-0 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-muted-foreground">
+                            {p.nome.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium text-foreground">{p.nome}</p>
+                          <p className="truncate text-xs text-muted-foreground">{p.email}</p>
+                          {p.departamento && (
+                            <p className="mt-0.5 text-xs text-muted-foreground">{p.departamento}</p>
+                          )}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => handleAtivarPendente(p)}
+                        className="shrink-0 bg-gradient-to-r from-fenix-purple-dark to-fenix-purple-light text-white"
+                      >
+                        <UserCheck className="mr-1 h-4 w-4" />
+                        Ativar
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </main>
       </div>
 
       {/* Dialog de confirmação de exclusão */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent className="bg-[#1a2744] border-white/10 text-white">
+        <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-white">Confirmar Exclusão</AlertDialogTitle>
-            <AlertDialogDescription className="text-white/60">
-              Tem certeza que deseja excluir este usuário? Esta ação não pode ser desfeita.
+            <AlertDialogTitle>Excluir usuário</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação não pode ser desfeita. O acesso deste usuário ao sistema será
+              removido.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="bg-white/10 border-white/20 text-white hover:bg-white/20">
-              Cancelar
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700 text-white">
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               Excluir
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+
+      {/* Modal Ativar colaborador pendente */}
+      <Dialog open={ativarModalOpen} onOpenChange={(open) => !open && closeAtivarModal()}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserCheck className="h-5 w-5 text-primary" />
+              Ativar colaborador
+            </DialogTitle>
+            <DialogDescription>
+              Defina a senha e a função. Nome e e-mail já estão preenchidos.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Nome</label>
+              <Input value={createForm.nome} disabled className="bg-muted" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">E-mail</label>
+              <Input type="email" value={createForm.email} disabled className="bg-muted" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Senha</label>
+              <Input
+                type="password"
+                value={createForm.senha}
+                onChange={(e) => setCreateForm({ ...createForm, senha: e.target.value })}
+                placeholder="Mínimo 6 caracteres"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Função</label>
+              <Select
+                value={createForm.role}
+                onValueChange={(value: UserRole) =>
+                  setCreateForm({ ...createForm, role: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Administrador</SelectItem>
+                  <SelectItem value="advogado">Advogado</SelectItem>
+                  <SelectItem value="supervisor">Supervisor</SelectItem>
+                  <SelectItem value="estagiario">Estagiário</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Área do direito</label>
+              <Select
+                value={createForm.area || '_none'}
+                onValueChange={(value) =>
+                  setCreateForm({
+                    ...createForm,
+                    area: value === '_none' ? null : (value as AreaDireito),
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione a área" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">Nenhuma</SelectItem>
+                  {AREAS_DIREITO.map((area) => (
+                    <SelectItem key={area} value={area!}>{area}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeAtivarModal} disabled={isCreating}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleCreateUser}
+              className="bg-gradient-to-r from-fenix-purple-dark to-fenix-purple-light text-white"
+              disabled={isCreating}
+            >
+              {isCreating ? (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  Criando...
+                </>
+              ) : (
+                <>
+                  <UserCheck className="mr-2 h-4 w-4" />
+                  Ativar e criar usuário
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

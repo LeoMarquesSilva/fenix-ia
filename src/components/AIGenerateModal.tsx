@@ -23,21 +23,16 @@ import {
 } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
 import { useToast } from '@/components/ui/use-toast'
-import { Sparkles, FileText, Loader2, Upload, X } from 'lucide-react'
+import { Sparkles, FileText, Loader2, MessageSquare, Upload, X } from 'lucide-react'
 import type { TeseInsert } from '@/types/supabase'
+import { AREAS_DIREITO } from '@/types/profiles'
 
 interface AIGenerateModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
-const AREAS_DISPONIVEIS = [
-  'Trabalhista',
-  'Reestruturação',
-  'Societário e Contratos',
-  'Distressed Deals',
-  'Cível',
-]
+const AREAS_DISPONIVEIS = AREAS_DIREITO.filter(Boolean) as string[]
 
 export function AIGenerateModal({ open, onOpenChange }: AIGenerateModalProps) {
   const { user } = useAuth()
@@ -286,8 +281,18 @@ export function AIGenerateModal({ open, onOpenChange }: AIGenerateModalProps) {
                 <SelectValue placeholder="Selecione o tipo" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="Tese">Tese</SelectItem>
-                <SelectItem value="Consultivo">Consultivo</SelectItem>
+                <SelectItem value="Tese">
+                  <span className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 shrink-0" />
+                    Tese
+                  </span>
+                </SelectItem>
+                <SelectItem value="Consultivo">
+                  <span className="flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4 shrink-0" />
+                    Consultivo
+                  </span>
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>

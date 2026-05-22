@@ -1,5 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import {
+  normalizeTeseInsert,
+  normalizeTeseRow,
+  normalizeTeseUpdate,
+} from '@/lib/teseFormat'
 import type { Tese, TeseInsert, TeseUpdate } from '@/types/supabase'
 
 interface TeseFilters {
@@ -7,12 +12,11 @@ interface TeseFilters {
   area?: string
   assunto?: string
   tipoTese?: string
-  criadorId?: string
-  dataInicio?: string
-  dataFim?: string
   ordenacao?: 'recentes' | 'antigos' | 'titulo_asc' | 'titulo_desc'
   page?: number
   pageSize?: number
+  includePrivatePeticoes?: boolean
+  includePrivateContratos?: boolean
 }
 
 // Função auxiliar para obter token de autenticação
@@ -51,7 +55,17 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
 }
 
 export function useTeses(filters: TeseFilters = {}) {
-  const { search, area, assunto, tipoTese, criadorId, dataInicio, dataFim, ordenacao = 'recentes', page = 1, pageSize = 20 } = filters
+  const {
+    search,
+    area,
+    assunto,
+    tipoTese,
+    ordenacao = 'recentes',
+    page = 1,
+    pageSize = 20,
+    includePrivatePeticoes = false,
+    includePrivateContratos = false,
+  } = filters
 
   return useQuery({
     queryKey: ['teses', filters],
@@ -88,9 +102,11 @@ export function useTeses(filters: TeseFilters = {}) {
             params.push('order=created_at.desc')
         }
         
-        if (search) {
-          params.push(`or=(titulo.ilike.*${search}*,descricao.ilike.*${search}*,texto_conteudo.ilike.*${search}*)`)
-        }
+        const safeSearch = search ? encodeURIComponent(search) : ''
+        const searchExpr = search
+          ? `or(titulo.ilike.*${safeSearch}*,descricao.ilike.*${safeSearch}*,texto_conteudo.ilike.*${safeSearch}*)`
+          : ''
+        let visibilityExpr = ''
         if (area) {
           params.push(`area=eq.${encodeURIComponent(area)}`)
         }
@@ -100,14 +116,22 @@ export function useTeses(filters: TeseFilters = {}) {
         if (tipoTese) {
           params.push(`tipo_tese=eq.${encodeURIComponent(tipoTese)}`)
         }
-        if (criadorId) {
-          params.push(`user_id=eq.${criadorId}`)
+        if (!includePrivatePeticoes || !includePrivateContratos) {
+          const privateTypes: string[] = []
+          if (!includePrivatePeticoes) privateTypes.push('"Petição Inicial Privada"')
+          if (!includePrivateContratos) {
+            privateTypes.push('"Contrato Privado - Prestação de Serviços"')
+          }
+          if (privateTypes.length > 0) {
+            visibilityExpr = `or(tipo_tese.is.null,tipo_tese.not.in.(${privateTypes.join(',')}))`
+          }
         }
-        if (dataInicio) {
-          params.push(`created_at=gte.${dataInicio}T00:00:00`)
-        }
-        if (dataFim) {
-          params.push(`created_at=lte.${dataFim}T23:59:59`)
+        if (searchExpr && visibilityExpr) {
+          params.push(`and=(${searchExpr},${visibilityExpr})`)
+        } else if (searchExpr) {
+          params.push(searchExpr.replace('or(', 'or=(').replace(/\)$/, ')'))
+        } else if (visibilityExpr) {
+          params.push(visibilityExpr.replace('or(', 'or=(').replace(/\)$/, ')'))
         }
         
         const from = (page - 1) * pageSize
@@ -135,20 +159,21 @@ export function useTeses(filters: TeseFilters = {}) {
         }
         
         const data = await response.json()
-        
+        const normalized = (data as Tese[]).map(normalizeTeseRow)
+
         const contentRange = response.headers.get('content-range')
-        let count = data.length
+        let count = normalized.length
         if (contentRange) {
           const totalMatch = contentRange.match(/\/(\d+)$/)
           if (totalMatch) {
             count = parseInt(totalMatch[1])
           }
         }
-        
-        console.log('✅ useTeses - Sucesso!', data.length, 'teses, total:', count)
-        
+
+        console.log('✅ useTeses - Sucesso!', normalized.length, 'teses, total:', count)
+
         return {
-          data: data as Tese[],
+          data: normalized,
           count: count || data.length,
           page,
           pageSize,
@@ -158,6 +183,60 @@ export function useTeses(filters: TeseFilters = {}) {
         console.error('❌ useTeses - Erro:', error)
         throw error
       }
+    },
+  })
+}
+
+export function useMyPrivatePeticoes() {
+  return useQuery({
+    queryKey: ['my-private-peticoes'],
+    queryFn: async () => {
+      const { data: auth } = await supabase.auth.getUser()
+      const uid = auth.user?.id
+      if (!uid) throw new Error('Usuário não autenticado')
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
+      const url =
+        `${supabaseUrl}/rest/v1/teses?` +
+        `select=*&user_id=eq.${uid}&tipo_tese=eq.${encodeURIComponent('Petição Inicial Privada')}&order=created_at.desc`
+
+      const response = await fetchWithAuth(url, {
+        method: 'GET',
+      })
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Erro ao buscar petições privadas: ${response.status} ${errorText}`)
+      }
+
+      const data = await response.json()
+      return (data as Tese[]).map(normalizeTeseRow)
+    },
+  })
+}
+
+export function useMyPrivateContratos() {
+  return useQuery({
+    queryKey: ['my-private-contratos'],
+    queryFn: async () => {
+      const { data: auth } = await supabase.auth.getUser()
+      const uid = auth.user?.id
+      if (!uid) throw new Error('Usuário não autenticado')
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
+      const url =
+        `${supabaseUrl}/rest/v1/teses?` +
+        `select=*&user_id=eq.${uid}&tipo_tese=eq.${encodeURIComponent('Contrato Privado - Prestação de Serviços')}&order=created_at.desc`
+
+      const response = await fetchWithAuth(url, {
+        method: 'GET',
+      })
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Erro ao buscar contratos privados: ${response.status} ${errorText}`)
+      }
+
+      const data = await response.json()
+      return (data as Tese[]).map(normalizeTeseRow)
     },
   })
 }
@@ -189,7 +268,7 @@ export function useTese(id: string) {
         throw new Error('Tese não encontrada')
       }
       
-      return data[0] as Tese
+      return normalizeTeseRow(data[0] as Tese)
     },
     enabled: !!id,
   })
@@ -200,14 +279,15 @@ export function useCreateTese() {
 
   return useMutation({
     mutationFn: async (tese: TeseInsert) => {
-      console.log('📝 useCreateTese - Criando tese:', tese.titulo)
-      
+      const payload = normalizeTeseInsert(tese)
+      console.log('📝 useCreateTese - Criando tese:', payload.titulo)
+
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
       const url = `${supabaseUrl}/rest/v1/teses`
-      
+
       const response = await fetchWithAuth(url, {
         method: 'POST',
-        body: JSON.stringify(tese),
+        body: JSON.stringify(payload),
       })
       
       if (!response.ok) {
@@ -218,7 +298,7 @@ export function useCreateTese() {
       
       const data = await response.json()
       console.log('✅ useCreateTese - Sucesso!')
-      return data[0] as Tese
+      return normalizeTeseRow(data[0] as Tese)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['teses'] })
@@ -231,14 +311,15 @@ export function useUpdateTese() {
 
   return useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: TeseUpdate }) => {
+      const payload = normalizeTeseUpdate(updates)
       console.log('📝 useUpdateTese - Atualizando tese:', id)
-      
+
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
       const url = `${supabaseUrl}/rest/v1/teses?id=eq.${id}`
-      
+
       const response = await fetchWithAuth(url, {
         method: 'PATCH',
-        body: JSON.stringify(updates),
+        body: JSON.stringify(payload),
       })
       
       if (!response.ok) {
@@ -249,7 +330,7 @@ export function useUpdateTese() {
       
       const data = await response.json()
       console.log('✅ useUpdateTese - Sucesso!')
-      return data[0] as Tese
+      return normalizeTeseRow(data[0] as Tese)
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['teses'] })
@@ -263,17 +344,18 @@ export function useUpsertTeses() {
 
   return useMutation({
     mutationFn: async (teses: TeseInsert[]) => {
-      console.log('📝 useUpsertTeses - Upserting', teses.length, 'teses')
-      
+      const payload = teses.map(normalizeTeseInsert)
+      console.log('📝 useUpsertTeses - Upserting', payload.length, 'teses')
+
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
       const url = `${supabaseUrl}/rest/v1/teses`
-      
+
       const response = await fetchWithAuth(url, {
         method: 'POST',
         headers: {
           'Prefer': 'resolution=merge-duplicates,return=representation',
         },
-        body: JSON.stringify(teses),
+        body: JSON.stringify(payload),
       })
       
       if (!response.ok) {
@@ -284,7 +366,7 @@ export function useUpsertTeses() {
       
       const data = await response.json()
       console.log('✅ useUpsertTeses - Sucesso!', data.length, 'teses')
-      return data as Tese[]
+      return (data as Tese[]).map(normalizeTeseRow)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['teses'] })

@@ -2,6 +2,12 @@ import ReactDOM from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App.tsx'
 import './index.css'
+
+if (typeof window !== 'undefined') {
+  const t = localStorage.getItem('fenix-theme')
+  if (t === 'dark') document.documentElement.classList.add('dark')
+  else document.documentElement.classList.remove('dark')
+}
 import './lib/test-connection'
 
 // Interceptar todos os erros de AbortError globalmente

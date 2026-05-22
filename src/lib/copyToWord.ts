@@ -1,342 +1,306 @@
 /**
- * Copia HTML para clipboard de forma que o Word reconheça e preserve formatação
- * Usa múltiplas estratégias para garantir compatibilidade máxima
+ * Copia HTML para clipboard para colar no Word com formatação correta.
+ *
+ * ORDEM DE TENTATIVAS:
+ * 1. Clipboard API  — envia HTML puro sem renderizar no DOM, evita herdar CSS global
+ * 2. iframe         — documento isolado, sem herdar CSS global (border-border, etc.)
+ * 3. execCommand    — fallback, pode herdar CSS global; aceitável como último recurso
+ *
+ * NÃO use execCommand no DOM principal como primeira tentativa: o CSS global
+ * "* { @apply border-border }" do Tailwind aplica border-color a todos os elementos,
+ * e o browser serializa isso como estilo inline ao copiar, fazendo o Word adicionar
+ * bordas em todos os parágrafos (pBdr com cor E2E8F0).
  */
 
 /**
- * Método principal: cria elemento DOM invisível e copia diretamente
- * Esta é a forma mais confiável de copiar HTML preservando formatação para Word
+ * Estilos base para peças jurídicas: Times New Roman 12 pt.
+ * Não forçamos font-family nos elementos individuais — eles herdam daqui.
  */
-export async function copyHTMLToWordClipboard(html: string): Promise<void> {
-  try {
-    // Método 1: Tentar criar elemento invisível e copiar (mais confiável)
-    await copyViaDOMElement(html)
-    return
-  } catch (error) {
-    console.warn('Método DOM falhou, tentando iframe:', error)
-  }
+const WRAPPER_STYLE =
+  "font-family: 'Times New Roman', Times, serif; font-size: 12pt; font-weight: normal; color: #000000; line-height: 1.5;"
 
-  try {
-    // Método 1b: Tentar com iframe (isolamento completo)
-    await copyViaIframe(html)
-    return
-  } catch (error) {
-    console.warn('Método iframe falhou, tentando HTML Format:', error)
-  }
+/**
+ * Propriedades CSS que NÃO devem ir para o Word:
+ * - border/outline/box-shadow → Word converte em pBdr (borda de parágrafo)
+ * - font-family/font-size inline → sobrescrevem o wrapper, podem trazer Calibri/11pt
+ * - background-color → não faz sentido em documento jurídico
+ */
+const STRIP_CSS_PROP =
+  /^(-(webkit|moz|ms|o)-)?((border|outline|box-shadow|background|font-family|font-size))/i
 
-  try {
-    // Método 2: Usar HTML Format com Clipboard API
-    await copyViaHTMLFormat(html)
-    return
-  } catch (error) {
-    console.warn('Método HTML Format falhou, tentando fallback:', error)
-  }
-
-  // Método 3: Fallback simples
-  copyViaSimpleSelection(html)
+function sanitizeInlineStyle(style: string): string {
+  if (!style.trim()) return ''
+  return style
+    .split(';')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter((decl) => {
+      const prop = decl.split(':')[0]?.trim() || ''
+      return !STRIP_CSS_PROP.test(prop)
+    })
+    .join('; ')
 }
 
-/**
- * Método 1: Copiar via elemento DOM invisível (simula copiar do Word)
- * Este método cria um elemento invisível, renderiza o HTML, e copia a seleção
- * É o método mais confiável porque o navegador trata como se fosse uma cópia normal
- */
-async function copyViaDOMElement(html: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    // Criar container invisível com estilos que preservam formatação
-    const container = document.createElement('div')
-    container.style.position = 'fixed'
-    container.style.left = '-9999px'
-    container.style.top = '0'
-    container.style.width = '210mm' // Largura A4
-    container.style.padding = '2.54cm' // Margem padrão Word
-    container.style.backgroundColor = 'white'
-    container.style.color = 'black'
-    container.style.fontFamily = 'Calibri, Arial, sans-serif'
-    container.style.fontSize = '11pt'
-    container.style.lineHeight = '1.15'
-    container.style.whiteSpace = 'pre-wrap' // Preservar espaços
-    container.contentEditable = 'true'
-    container.setAttribute('spellcheck', 'false')
-    
-    // Inserir HTML
-    container.innerHTML = html
+/** Classes Tailwind que causam bordas/sombras no Word. */
+const STRIP_CLASS_PREFIXES = [
+  'border', 'ring', 'divide', 'outline', 'shadow', 'rounded', 'bg-', 'p-', 'px-', 'py-',
+]
 
-    // Adicionar ao DOM
-    document.body.appendChild(container)
-
-    // Aguardar múltiplos frames para garantir renderização completa
-    // Isso é importante para imagens e estilos complexos
-    let framesWaited = 0
-    const maxFrames = 3
-    
-    const waitAndCopy = () => {
-      requestAnimationFrame(() => {
-        framesWaited++
-        if (framesWaited < maxFrames) {
-          waitAndCopy()
-          return
-        }
-
-        try {
-          // Focar no container primeiro
-          container.focus()
-          
-          // Selecionar todo o conteúdo
-          const range = document.createRange()
-          range.selectNodeContents(container)
-          const selection = window.getSelection()
-          
-          if (!selection) {
-            throw new Error('Selection não disponível')
-          }
-
-          selection.removeAllRanges()
-          selection.addRange(range)
-
-          // Pequeno delay antes de copiar (garante que seleção está ativa)
-          setTimeout(() => {
-            try {
-              // Copiar usando execCommand (preserva formatação melhor)
-              const success = document.execCommand('copy')
-              
-              // Limpar seleção
-              selection.removeAllRanges()
-              document.body.removeChild(container)
-
-              if (success) {
-                resolve()
-              } else {
-                reject(new Error('execCommand copy retornou false'))
-              }
-            } catch (copyError) {
-              // Limpar em caso de erro
-              selection.removeAllRanges()
-              document.body.removeChild(container)
-              reject(copyError)
-            }
-          }, 10)
-        } catch (error) {
-          // Limpar em caso de erro
-          try {
-            const selection = window.getSelection()
-            selection?.removeAllRanges()
-            document.body.removeChild(container)
-          } catch {}
-          reject(error)
-        }
-      })
+function sanitizeClasses(el: HTMLElement): void {
+  for (const c of [...el.classList]) {
+    if (STRIP_CLASS_PREFIXES.some((pfx) => c === pfx || c.startsWith(pfx))) {
+      el.classList.remove(c)
     }
-
-    waitAndCopy()
-  })
-}
-
-/**
- * Método 1b: Copiar via iframe (isolamento completo do conteúdo)
- * Pode funcionar melhor em alguns navegadores
- */
-async function copyViaIframe(html: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const iframe = document.createElement('iframe')
-    iframe.style.position = 'fixed'
-    iframe.style.left = '-9999px'
-    iframe.style.top = '0'
-    iframe.style.width = '210mm'
-    iframe.style.height = '297mm'
-    iframe.style.border = 'none'
-    
-    document.body.appendChild(iframe)
-
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
-    if (!iframeDoc) {
-      document.body.removeChild(iframe)
-      reject(new Error('Não foi possível acessar iframe document'))
-      return
-    }
-
-    // Escrever HTML no iframe
-    iframeDoc.open()
-    iframeDoc.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <style>
-          body {
-            font-family: Calibri, Arial, sans-serif;
-            font-size: 11pt;
-            line-height: 1.15;
-            padding: 2.54cm;
-            margin: 0;
-            background: white;
-            color: black;
-          }
-        </style>
-      </head>
-      <body>${html}</body>
-      </html>
-    `)
-    iframeDoc.close()
-
-    // Aguardar renderização
-    iframe.onload = () => {
-      setTimeout(() => {
-        try {
-          const iframeBody = iframeDoc.body
-          const range = iframeDoc.createRange()
-          range.selectNodeContents(iframeBody)
-          
-          const selection = iframe.contentWindow?.getSelection() || iframeDoc.getSelection()
-          if (!selection) {
-            throw new Error('Selection não disponível no iframe')
-          }
-
-          selection.removeAllRanges()
-          selection.addRange(range)
-
-          // Copiar
-          const success = iframeDoc.execCommand('copy')
-          
-          // Limpar
-          selection.removeAllRanges()
-          document.body.removeChild(iframe)
-
-          if (success) {
-            resolve()
-          } else {
-            reject(new Error('execCommand copy retornou false no iframe'))
-          }
-        } catch (error) {
-          document.body.removeChild(iframe)
-          reject(error)
-        }
-      }, 100)
-    }
-
-    // Timeout de segurança
-    setTimeout(() => {
-      if (document.body.contains(iframe)) {
-        document.body.removeChild(iframe)
-        reject(new Error('Timeout ao copiar via iframe'))
-      }
-    }, 5000)
-  })
-}
-
-/**
- * Método 2: Usar formato HTML Format com Clipboard API
- * Cria o formato HTML Format que o Word reconhece
- */
-async function copyViaHTMLFormat(html: string): Promise<void> {
-  if (!navigator.clipboard || !window.ClipboardItem) {
-    throw new Error('Clipboard API não disponível')
   }
+}
 
-  // Criar HTML Format correto
-  const htmlFormat = createHTMLFormat(html)
-  const plainText = extractPlainText(html)
-
-  // Criar blobs
-  const htmlBlob = new Blob([htmlFormat], { type: 'text/html' })
-  const textBlob = new Blob([plainText], { type: 'text/plain' })
-
-  // Criar ClipboardItem
-  const clipboardItem = new ClipboardItem({
-    'text/html': htmlBlob,
-    'text/plain': textBlob,
-  })
-
-  await navigator.clipboard.write([clipboardItem])
+function sanitizeDomForWord(root: HTMLElement): void {
+  const style = root.getAttribute('style')
+  if (style) {
+    const cleaned = sanitizeInlineStyle(style)
+    if (cleaned) root.setAttribute('style', cleaned)
+    else root.removeAttribute('style')
+  }
+  sanitizeClasses(root)
+  for (const child of root.children) {
+    sanitizeDomForWord(child as HTMLElement)
+  }
 }
 
 /**
- * Cria HTML Format no padrão Microsoft
- * Baseado na especificação: https://docs.microsoft.com/en-us/previous-versions/windows/internet-explorer/ie-developer/platform-apis/aa767917(v=vs.85)
+ * Prepara HTML para colagem no Word:
+ * - Remove classes/estilos incompatíveis (bordas, fontes inline, backgrounds)
+ * - Mantém negrito/itálico/sublinhado estrutural
+ * - Envolve em div com TNR 12pt
  */
-function createHTMLFormat(html: string): string {
+export function prepareHtmlForWordClipboard(html: string): string {
+  const trimmed = html?.trim() || ''
+  if (!trimmed) return ''
+
   const parser = new DOMParser()
-  const doc = parser.parseFromString(html, 'text/html')
-  const bodyContent = doc.body.innerHTML || html
+  const doc = parser.parseFromString(trimmed, 'text/html')
+  const body = doc.body
 
-  // Criar HTML completo
-  const fullHTML = `<html>
+  function stripWeightClasses(el: HTMLElement): void {
+    el.classList.remove('prose', 'prose-invert', 'dark:prose-invert')
+    for (const c of [...el.classList]) {
+      if (
+        c.includes('font-bold') ||
+        c.includes('font-semibold') ||
+        c.includes('font-black') ||
+        c === 'font-medium'
+      ) {
+        el.classList.remove(c)
+      }
+    }
+    for (const child of el.children) {
+      stripWeightClasses(child as HTMLElement)
+    }
+  }
+
+  stripWeightClasses(body)
+  sanitizeDomForWord(body)
+
+  if (body.children.length === 1) {
+    const only = body.children[0] as HTMLElement
+    const tag = only.tagName.toLowerCase()
+    if (tag === 'strong' || tag === 'b') {
+      body.innerHTML = only.innerHTML
+    }
+  }
+
+  const wrapper = doc.createElement('div')
+  wrapper.setAttribute('style', WRAPPER_STYLE)
+  wrapper.innerHTML = body.innerHTML
+
+  body.innerHTML = ''
+  body.appendChild(wrapper)
+
+  return body.innerHTML
+}
+
+/** Documento HTML completo para Clipboard API — sem CF_HTML, sem CSS global. */
+function buildCleanHtmlDocument(bodyInnerHtml: string): string {
+  return `<!DOCTYPE html>
+<html>
 <head>
+<meta charset="utf-8">
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style>
+  body {
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 12pt;
+    line-height: 1.5;
+    font-weight: normal;
+    color: #000000;
+    margin: 2.54cm;
+  }
+  * { border: none !important; outline: none !important; box-shadow: none !important; background: transparent !important; }
+  strong, b { font-weight: bold; }
+  em, i     { font-style: italic; }
+  u         { text-decoration: underline; }
+</style>
 </head>
 <body>
-<!--StartFragment-->${bodyContent}<!--EndFragment-->
+${bodyInnerHtml}
 </body>
 </html>`
-
-  // Calcular posições (em bytes, considerando \r\n)
-  const version = 'Version:0.9\r\n'
-  const startHTML = 'StartHTML:'
-  const endHTML = 'EndHTML:'
-  const startFragment = 'StartFragment:'
-  const endFragment = 'EndFragment:'
-
-  // Calcular tamanho do header
-  let headerSize = version.length
-  headerSize += startHTML.length + 10 + 2 // +10 para número, +2 para \r\n
-  headerSize += endHTML.length + 10 + 2
-  headerSize += startFragment.length + 10 + 2
-  headerSize += endFragment.length + 10 + 2
-
-  const startHTMLPos = headerSize
-  const htmlStart = startHTMLPos
-  const fragmentStart = htmlStart + fullHTML.indexOf('<!--StartFragment-->')
-  const fragmentEnd = fragmentStart + bodyContent.length
-  const htmlEnd = htmlStart + fullHTML.length
-
-  // Criar HTML Format
-  const htmlFormat = `${version}${startHTML}${String(startHTMLPos).padStart(10, '0')}\r\n${endHTML}${String(htmlEnd).padStart(10, '0')}\r\n${startFragment}${String(fragmentStart).padStart(10, '0')}\r\n${endFragment}${String(fragmentEnd).padStart(10, '0')}\r\n${fullHTML}`
-
-  return htmlFormat
 }
 
-/**
- * Método 3: Fallback simples - copiar texto selecionado
- */
-function copyViaSimpleSelection(html: string): void {
-  const parser = new DOMParser()
-  const doc = parser.parseFromString(html, 'text/html')
-  const bodyContent = doc.body.innerHTML || html
-
-  const tempDiv = document.createElement('div')
-  tempDiv.innerHTML = bodyContent
-  tempDiv.style.position = 'fixed'
-  tempDiv.style.left = '-9999px'
-  tempDiv.style.top = '0'
-  tempDiv.contentEditable = 'true'
-
-  document.body.appendChild(tempDiv)
-  tempDiv.focus()
-
-  const range = document.createRange()
-  range.selectNodeContents(tempDiv)
-  const selection = window.getSelection()
-  selection?.removeAllRanges()
-  selection?.addRange(range)
-
-  document.execCommand('copy')
-
-  selection?.removeAllRanges()
-  document.body.removeChild(tempDiv)
-}
-
-/**
- * Extrai texto simples do HTML
- */
 function extractPlainText(html: string): string {
   const parser = new DOMParser()
   const doc = parser.parseFromString(html, 'text/html')
   return doc.body.textContent || doc.body.innerText || ''
 }
 
+// ─── Via Clipboard API (preferida) ─────────────────────────────────────────
+
+async function copyViaClipboardApi(bodyInnerHtml: string): Promise<void> {
+  if (!navigator.clipboard || !window.ClipboardItem) {
+    throw new Error('Clipboard API não disponível')
+  }
+
+  const htmlString = buildCleanHtmlDocument(bodyInnerHtml)
+  const plainText = extractPlainText(bodyInnerHtml)
+
+  const htmlBlob = new Blob([htmlString], { type: 'text/html' })
+  const textBlob = new Blob([plainText], { type: 'text/plain' })
+
+  await navigator.clipboard.write([
+    new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob }),
+  ])
+}
+
+// ─── Via iframe (2ª opção — DOM isolado, sem CSS global) ───────────────────
+
+async function copyViaIframe(html: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const iframe = document.createElement('iframe')
+    Object.assign(iframe.style, {
+      position: 'fixed', left: '-9999px', top: '0',
+      width: '210mm', height: '297mm', border: 'none', opacity: '0',
+    })
+    document.body.appendChild(iframe)
+
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
+    if (!iframeDoc) {
+      document.body.removeChild(iframe)
+      return reject(new Error('iframe document inacessível'))
+    }
+
+    iframeDoc.open()
+    iframeDoc.write(buildCleanHtmlDocument(html))
+    iframeDoc.close()
+
+    const cleanup = () => {
+      if (document.body.contains(iframe)) document.body.removeChild(iframe)
+    }
+
+    const failTimer = window.setTimeout(() => { cleanup(); reject(new Error('Timeout iframe')) }, 5000)
+
+    window.setTimeout(() => {
+      try {
+        const range = iframeDoc.createRange()
+        range.selectNodeContents(iframeDoc.body)
+        const sel = iframe.contentWindow?.getSelection() || iframeDoc.getSelection()
+        if (!sel) throw new Error('getSelection indisponível no iframe')
+        sel.removeAllRanges()
+        sel.addRange(range)
+        const ok = iframeDoc.execCommand('copy')
+        sel.removeAllRanges()
+        window.clearTimeout(failTimer)
+        cleanup()
+        if (ok) resolve()
+        else reject(new Error('execCommand false no iframe'))
+      } catch (err) {
+        window.clearTimeout(failTimer)
+        cleanup()
+        reject(err)
+      }
+    }, 60)
+  })
+}
+
+// ─── Via execCommand no DOM principal (último recurso) ─────────────────────
+// ATENÇÃO: o CSS global pode contaminar os estilos copiados.
+
+async function copyViaDOMElement(html: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const container = document.createElement('div')
+    Object.assign(container.style, {
+      position: 'fixed', left: '-9999px', top: '0', opacity: '0',
+      width: '210mm', padding: '2.54cm',
+      fontFamily: "'Times New Roman', Times, serif",
+      fontSize: '12pt', fontWeight: 'normal', lineHeight: '1.5',
+      color: '#000000', backgroundColor: 'white',
+      border: 'none', outline: 'none', boxShadow: 'none',
+    })
+    container.contentEditable = 'true'
+    container.setAttribute('spellcheck', 'false')
+    container.innerHTML = html
+    document.body.appendChild(container)
+
+    let frames = 0
+    const tick = () => {
+      requestAnimationFrame(() => {
+        if (++frames < 3) return tick()
+        try {
+          container.focus()
+          const range = document.createRange()
+          range.selectNodeContents(container)
+          const sel = window.getSelection()
+          if (!sel) { document.body.removeChild(container); return reject(new Error('no selection')) }
+          sel.removeAllRanges()
+          sel.addRange(range)
+          setTimeout(() => {
+            try {
+              const ok = document.execCommand('copy')
+              sel.removeAllRanges()
+              document.body.removeChild(container)
+              if (ok) resolve()
+              else reject(new Error('execCommand false'))
+            } catch (e) {
+              sel.removeAllRanges()
+              document.body.removeChild(container)
+              reject(e)
+            }
+          }, 10)
+        } catch (e) {
+          try { document.body.removeChild(container) } catch { /* ignore */ }
+          reject(e)
+        }
+      })
+    }
+    tick()
+  })
+}
+
+// ─── Ponto de entrada público ───────────────────────────────────────────────
+
 /**
- * Método alternativo exportado para uso direto
+ * Copia HTML para o clipboard em formato compatível com Word.
+ * Tenta Clipboard API → iframe → execCommand (DOM principal).
  */
+export async function copyHTMLToWordClipboard(html: string): Promise<void> {
+  const prepared = prepareHtmlForWordClipboard(html)
+
+  try {
+    await copyViaClipboardApi(prepared)
+    return
+  } catch (e) {
+    console.warn('Clipboard API falhou, tentando iframe:', e)
+  }
+
+  try {
+    await copyViaIframe(prepared)
+    return
+  } catch (e) {
+    console.warn('iframe falhou, tentando execCommand:', e)
+  }
+
+  await copyViaDOMElement(prepared)
+}
+
 export function copyHTMLToWordAlternative(html: string): Promise<void> {
-  return copyViaDOMElement(html)
+  return copyHTMLToWordClipboard(html)
 }

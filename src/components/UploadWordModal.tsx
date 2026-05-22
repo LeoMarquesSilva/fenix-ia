@@ -21,8 +21,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useToast } from '@/components/ui/use-toast'
-import { Upload, FileText, Loader2 } from 'lucide-react'
+import { Upload, FileText, Loader2, MessageSquare } from 'lucide-react'
 import type { TeseInsert } from '@/types/supabase'
+import { AREAS_DIREITO } from '@/types/profiles'
 import { generateIdentificador } from '@/lib/generateIdentificador'
 import { generateAssuntosEDescricao } from '@/lib/openai'
 
@@ -31,13 +32,7 @@ interface UploadWordModalProps {
   onOpenChange: (open: boolean) => void
 }
 
-const AREAS_DISPONIVEIS = [
-  'Trabalhista',
-  'Reestruturação',
-  'Societário e Contratos',
-  'Distressed Deals',
-  'Cível',
-]
+const AREAS_DISPONIVEIS = AREAS_DIREITO.filter(Boolean) as string[]
 
 export function UploadWordModal({ open, onOpenChange }: UploadWordModalProps) {
   const [file, setFile] = useState<File | null>(null)
@@ -458,8 +453,18 @@ export function UploadWordModal({ open, onOpenChange }: UploadWordModalProps) {
                   <SelectValue placeholder="Selecione o tipo" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Tese">Tese</SelectItem>
-                  <SelectItem value="Consultivo">Consultivo</SelectItem>
+                  <SelectItem value="Tese">
+                    <span className="flex items-center gap-2">
+                      <FileText className="h-4 w-4 shrink-0" />
+                      Tese
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="Consultivo">
+                    <span className="flex items-center gap-2">
+                      <MessageSquare className="h-4 w-4 shrink-0" />
+                      Consultivo
+                    </span>
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>

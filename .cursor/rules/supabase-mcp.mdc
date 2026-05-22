@@ -1,0 +1,31 @@
+---
+description: Usar o MCP do Supabase (projeto Fênix I.A) para SQL, migrações e inspeção do banco
+alwaysApply: true
+---
+
+# Supabase via MCP
+
+Para qualquer tarefa que envolva **Supabase** deste projeto (consultas, esquema, migrações, logs, tipos TypeScript, edge functions), use o servidor MCP **Supabase** configurado no workspace.
+
+## Identificador do servidor (call_mcp_tool)
+
+Use exatamente:
+
+`project-0-teses-cursor-supabase-teses-fenix-ia`
+
+Antes de chamar uma ferramenta, leia o schema em `mcps/project-0-teses-cursor-supabase-teses-fenix-ia/tools/<nome>.json` para parâmetros obrigatórios.
+
+## Quando usar cada ferramenta
+
+| Necessidade | Ferramenta MCP |
+|-------------|----------------|
+| Listar tabelas / colunas | `list_tables` |
+| SELECT / DML pontual (dados) | `execute_sql` |
+| DDL (criar/alterar tabelas, índices) | `apply_migration` (preferir a `execute_sql` para DDL) |
+| Histórico de migrações | `list_migrations` |
+| Sincronizar tipos TS com o banco | `generate_typescript_types` |
+| URL do projeto / chaves publicáveis | `get_project_url`, `get_publishable_keys` |
+| Logs | `get_logs` |
+| Documentação Supabase | `search_docs` |
+
+Não use o servidor `user-BANCO-MKT` para o banco **teses / Fênix I.A** — esse projeto usa o MCP **project-0-teses-cursor-supabase-teses-fenix-ia**.

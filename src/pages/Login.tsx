@@ -1,15 +1,17 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/use-toast'
+import { cn } from '@/lib/utils'
 
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const { signIn } = useAuth()
   const navigate = useNavigate()
@@ -38,86 +40,185 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center text-white p-4 relative overflow-hidden">
-      {/* Background com gradiente animado */}
-      <div className="absolute inset-0 bg-gradient-to-br from-[#0a1628] via-[#1a2744] to-[#0f1d32]" />
-      <div className="absolute inset-0 opacity-30">
-        <div className="absolute top-0 -left-4 w-72 h-72 bg-purple-600 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob" />
-        <div className="absolute top-0 -right-4 w-72 h-72 bg-blue-600 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-2000" />
-        <div className="absolute -bottom-8 left-20 w-72 h-72 bg-indigo-600 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-4000" />
-      </div>
-      <div className="absolute inset-0" style={{
-        backgroundImage: `
-          radial-gradient(circle at 25% 25%, rgba(139, 92, 246, 0.15) 0%, transparent 50%),
-          radial-gradient(circle at 75% 75%, rgba(59, 130, 246, 0.15) 0%, transparent 50%)
-        `
-      }} />
-      
-      <Card className="relative w-full max-w-md border-0 shadow-2xl backdrop-blur-xl bg-white/5 border border-white/10">
-        <CardHeader className="space-y-1 text-center pb-2">
-          <div className="mx-auto mb-6 flex flex-col items-center justify-center">
-            <img 
-              src="/assets/logos/logo-horizontal-branco-fenix.png" 
-              alt="Fênix I.A" 
-              className="h-20 w-auto mb-3"
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Base: fundo escuro sofisticado */}
+      <div className="absolute inset-0 bg-[#e8eef5] dark:bg-[#050a15]" />
+      {/* Formas abstratas 3D — canto inferior esquerdo (gradiente Fênix) */}
+      <div
+        className="absolute -bottom-32 -left-32 w-[500px] h-[500px] rounded-[40%_60%_70%_30%/40%_50%_60%_50%] opacity-25 dark:opacity-60 blur-3xl pointer-events-none"
+        style={{
+          background: 'linear-gradient(135deg, #1e3a5f 0%, #6b46c1 40%, #a78bfa 100%)',
+          boxShadow: '0 0 120px rgba(107, 70, 193, 0.4)',
+        }}
+      />
+      {/* Formas abstratas 3D — canto superior direito */}
+      <div
+        className="absolute -top-40 -right-40 w-[450px] h-[450px] rounded-[60%_40%_30%_70%/60%_30%_70%_40%] opacity-25 dark:opacity-60 blur-3xl pointer-events-none"
+        style={{
+          background: 'linear-gradient(225deg, #6b46c1 0%, #a78bfa 100%)',
+          boxShadow: '0 0 100px rgba(167, 139, 250, 0.35)',
+        }}
+      />
+      {/* Halo suave central */}
+      <div
+        className="absolute inset-0 opacity-15 dark:opacity-25 pointer-events-none"
+        style={{
+          background: 'radial-gradient(ellipse 60% 50% at 50% 50%, rgba(107, 70, 193, 0.15) 0%, transparent 70%)',
+        }}
+      />
+      {/* Textura starfield — pontos brilhantes */}
+      <div
+        className="absolute inset-0 opacity-30 dark:opacity-100 pointer-events-none"
+        style={{
+          backgroundImage: `
+            radial-gradient(circle at 15% 25%, rgba(255,255,255,0.12) 1px, transparent 1px),
+            radial-gradient(circle at 85% 15%, rgba(167,139,250,0.1) 1px, transparent 1px),
+            radial-gradient(circle at 70% 85%, rgba(107,70,193,0.08) 1px, transparent 1px),
+            radial-gradient(circle at 25% 70%, rgba(255,255,255,0.06) 1px, transparent 1px),
+            radial-gradient(circle at 50% 50%, rgba(167,139,250,0.06) 1px, transparent 1px)
+          `,
+          backgroundSize: '100% 100%',
+        }}
+      />
+      <div
+        className="absolute inset-0 opacity-20 dark:opacity-70 pointer-events-none"
+        style={{
+          backgroundImage: `radial-gradient(circle at 1px 1px, rgba(255,255,255,0.15) 1px, transparent 0)`,
+          backgroundSize: '6px 6px',
+        }}
+      />
+      <div className="relative z-10 w-full flex items-center justify-center">
+      {/* Card flutuante com split screen */}
+      <div
+        className={cn(
+          'w-full max-w-[960px] min-h-[560px] rounded-3xl overflow-hidden',
+          'bg-card shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)]',
+          'flex flex-col lg:flex-row'
+        )}
+      >
+        {/* Painel esquerdo: visual / branding */}
+        <div
+          className={cn(
+            'relative flex-1 min-h-[240px] lg:min-h-0',
+            'bg-gradient-to-b from-fenix-navy via-[#2a3d5c] to-fenix-purple-dark/80',
+            'flex flex-col items-center justify-center p-10 lg:p-12',
+            'rounded-t-3xl lg:rounded-l-3xl lg:rounded-tr-none'
+          )}
+        >
+          {/* Padrão de pontos */}
+          <div
+            className="absolute inset-0 opacity-20"
+            style={{
+              backgroundImage: `radial-gradient(circle at 1px 1px, white 1px, transparent 0)`,
+              backgroundSize: '24px 24px',
+            }}
+          />
+          <div className="relative flex flex-col items-center text-center">
+            <img
+              src="/assets/logos/logo-horizontal-branco-fenix.png"
+              alt="Fênix I.A"
+              className="w-full max-w-[260px] sm:max-w-[300px] lg:max-w-[340px] h-auto object-contain drop-shadow-lg brightness-110"
               onError={(e) => {
                 const target = e.target as HTMLImageElement
                 target.style.display = 'none'
-                const parent = target.parentElement
-                if (parent && !parent.querySelector('.fallback-icon')) {
-                  const fallback = document.createElement('div')
-                  fallback.className = 'fallback-icon flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-blue-500'
-                  fallback.innerHTML = '<svg class="h-8 w-8 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3z"/></svg>'
-                  parent.insertBefore(fallback, target)
-                }
               }}
             />
-            <p className="text-sm text-white/60 tracking-wide">Banco de Teses Jurídicas</p>
+            <h2 className="mt-6 text-xl lg:text-2xl font-bold text-white leading-tight max-w-sm">
+              Consulte e gerencie teses jurídicas com inteligência artificial
+            </h2>
+            <p className="mt-3 text-sm text-white/80 max-w-xs">
+              Banco de teses com busca avançada, assistente IA e relatórios
+              integrados.
+            </p>
           </div>
-          <CardTitle className="text-xl font-semibold text-white">
-            Acesse sua conta
-          </CardTitle>
-          <CardDescription className="text-white/50">
-            Entre com suas credenciais
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-white">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="seu@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="bg-white/10 border-white/20 text-white placeholder:text-white/50"
+        </div>
+
+        {/* Painel direito: formulário */}
+        <div className="flex-1 flex flex-col justify-center p-8 lg:p-12 bg-card">
+          <div className="w-full max-w-sm mx-auto">
+            {/* Logo pequeno */}
+            <div className="flex justify-center mb-6">
+              <img
+                src="/assets/logos/logo-fenix-ia-10.png"
+                alt="Fênix"
+                className="h-12 w-12 object-contain dark:brightness-110"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement
+                  target.style.display = 'none'
+                }}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-white">Senha</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
-                className="bg-white/10 border-white/20 text-white placeholder:text-white/50"
-              />
-            </div>
-            <Button 
-              type="submit" 
-              className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700" 
-              disabled={loading}
-            >
-              {loading ? 'Entrando...' : 'Entrar'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+
+            <h1 className="text-2xl font-bold text-foreground text-center">
+              Bem-vindo de volta!
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground text-center">
+              Entre na sua conta Fênix
+            </p>
+
+            <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-muted-foreground">
+                  Email
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="seu@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="h-11 rounded-lg border-input"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-muted-foreground">
+                  Senha
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    className="h-11 rounded-lg border-input pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-5 w-5" />
+                    ) : (
+                      <Eye className="h-5 w-5" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <Button
+                type="submit"
+                className="w-full h-11 rounded-lg fenix-gradient-primary hover:opacity-95 text-white font-medium shadow-md shadow-fenix-purple-dark/30"
+                disabled={loading}
+              >
+                {loading ? 'Entrando...' : 'Entrar'}
+              </Button>
+            </form>
+
+            <p className="mt-6 text-xs text-center text-muted-foreground">
+              Ao entrar, você concorda com nossa Política de Privacidade e
+              Termos de Uso.
+            </p>
+          </div>
+        </div>
+      </div>
+      </div>
     </div>
   )
 }

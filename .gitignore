@@ -28,3 +28,10 @@ dist-ssr
 .env.local
 .env.production.local
 .env.development.local
+
+# Cursor (credenciais MCP locais)
+.cursor/mcp.json
+
+# Artefatos temporários de comparação
+public/_cmp_correct/
+public/_cmp_wrong/

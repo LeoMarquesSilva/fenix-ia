@@ -1,17 +1,49 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useTese, useUpdateTese } from '@/hooks/useTeses'
 import { useTeses } from '@/hooks/useTeses'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/use-toast'
-import { ArrowLeft, Save, Download, FileText, PanelRightClose, PanelRightOpen, Copy, Check } from 'lucide-react'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import {
+  ArrowLeft,
+  Save,
+  Download,
+  FileText,
+  PanelRightClose,
+  PanelRightOpen,
+  Copy,
+  Check,
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  Highlighter,
+  Heading1,
+  Heading2,
+  Heading3,
+  Heading4,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  List,
+  ListOrdered,
+  Minus,
+  Undo2,
+  Redo2,
+} from 'lucide-react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
 import TextAlign from '@tiptap/extension-text-align'
-import Underline from '@tiptap/extension-underline'
+import TiptapUnderline from '@tiptap/extension-underline'
 import { Color } from '@tiptap/extension-color'
 import TextStyle from '@tiptap/extension-text-style'
 import Highlight from '@tiptap/extension-highlight'
@@ -20,7 +52,12 @@ import { saveAs } from 'file-saver'
 import { EditorAISidebar } from '@/components/EditorAISidebar'
 import { htmlToDocxElements } from '@/lib/htmlToDocx'
 import { copyHTMLToWordClipboard, copyHTMLToWordAlternative } from '@/lib/copyToWord'
+import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/hooks/useAuth'
 import { extractHTMLFromEditor, preserveInlineStyles, decideHTMLToSave } from '@/lib/preserveHTML'
+import { getAreaIcon } from '@/constants/area-icons'
+import { tipoTeseBadgeClass, areaBadgeClass, assuntoBadgeClass } from '@/components/dashboard/teseMetaStyles'
+import { cn } from '@/lib/utils'
 
 export default function ThesisEditor() {
   const { id } = useParams<{ id: string }>()
@@ -31,8 +68,7 @@ export default function ThesisEditor() {
   const isMultiple = teseIds.length > 1
 
   const { data: singleTese, isLoading: isLoadingSingle } = useTese(teseIds[0] || '')
-  
-  // Para múltiplas teses, buscar todas e filtrar
+
   const { data: allTesesData } = useTeses({
     page: 1,
     pageSize: 1000,
@@ -45,114 +81,91 @@ export default function ThesisEditor() {
         return indexA - indexB
       })
     : singleTese
-    ? [singleTese]
-    : []
+      ? [singleTese]
+      : []
 
   const isLoading = isMultiple ? false : isLoadingSingle
   const updateMutation = useUpdateTese()
   const { toast } = useToast()
+  const { user, canEditTeseContent } = useAuth()
+  const visualizacaoRegistrada = useRef<Set<string>>(new Set())
 
   const [activeTeseIndex, setActiveTeseIndex] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [copied, setCopied] = useState(false)
   const activeTese = teses[activeTeseIndex]
+  /** Persistir no Supabase (acervo). Edição local no TipTap é permitida sem isso para copiar/exportar. */
+  const canSaveTeseContent = activeTese
+    ? canEditTeseContent(activeTese.user_id)
+    : false
 
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        heading: {
-          levels: [1, 2, 3, 4],
-        },
-        // Configurar para preservar melhor atributos HTML
-        paragraph: {
-          HTMLAttributes: {
-            class: null, // Não adicionar classes automáticas
-          },
-        },
+        heading: { levels: [1, 2, 3, 4] },
+        paragraph: { HTMLAttributes: { class: null } },
       }),
       Link.configure({
         openOnClick: false,
-        HTMLAttributes: {
-          class: 'text-primary underline',
-        },
+        HTMLAttributes: { class: 'text-primary underline' },
       }),
       Placeholder.configure({
         placeholder: 'Comece a escrever sua tese...',
       }),
-      TextAlign.configure({
-        types: ['heading', 'paragraph'],
-      }),
-      Underline,
+      TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      TiptapUnderline,
       TextStyle,
       Color,
-      Highlight.configure({
-        multicolor: true,
-      }),
+      Highlight.configure({ multicolor: true }),
     ],
     content: activeTese?.texto_conteudo || '',
-    parseOptions: {
-      preserveWhitespace: 'full',
-    },
+    parseOptions: { preserveWhitespace: 'full' },
     editorProps: {
       attributes: {
         class:
-          'prose prose-sm sm:prose lg:prose-lg xl:prose-2xl mx-auto focus:outline-none min-h-[600px] p-6 max-w-4xl',
+          'prose prose-sm sm:prose lg:prose-lg xl:prose-2xl mx-auto focus:outline-none min-h-[500px] p-6 max-w-4xl dark:prose-invert',
       },
-      // Preservar estilos ao colar
-      transformPastedHTML: (html: string) => {
-        // Retornar HTML sem modificações para preservar formatação
-        return html
-      },
-      // Preservar atributos ao parsear
-      transformPastedText: (text: string) => {
-        return text
-      },
+      transformPastedHTML: (html: string) => html,
+      transformPastedText: (text: string) => text,
     },
   })
 
   useEffect(() => {
     if (activeTese && editor) {
-      // Carregar conteúdo preservando formatação original
-      // O false evita disparar eventos, preservando melhor o HTML original
       const htmlContent = activeTese.texto_conteudo || ''
-      
-      // Usar setContent com opções para preservar melhor
-      editor.commands.setContent(htmlContent, false, {
-        preserveWhitespace: 'full',
-      })
-      
-      // Log para debug (verificar se HTML está sendo preservado)
-      console.log('HTML carregado no editor (primeiros 500 chars):', htmlContent.substring(0, 500))
+      editor.commands.setContent(htmlContent, false, { preserveWhitespace: 'full' })
     }
   }, [activeTese, editor])
 
-  const handleSave = async () => {
-    if (!activeTese || !editor) return
+  useEffect(() => {
+    const tid = activeTese?.id
+    const uid = user?.id
+    if (!tid || !uid) return
+    if (visualizacaoRegistrada.current.has(tid)) return
+    visualizacaoRegistrada.current.add(tid)
+    void supabase.from('tese_visualizacoes').insert({ tese_id: tid, user_id: uid })
+  }, [activeTese?.id, user?.id])
 
+  useEffect(() => {
+    if (!editor) return
+    const id = window.requestAnimationFrame(() => {
+      window.dispatchEvent(new Event('resize'))
+    })
+    return () => window.cancelAnimationFrame(id)
+  }, [sidebarOpen, editor])
+
+  const handleSave = async () => {
+    if (!canSaveTeseContent || !activeTese || !editor) return
     try {
-      // IMPORTANTE: Comparar HTML original com HTML editado
-      // Se não houve mudanças reais (apenas normalização do Tiptap), manter HTML original
       const originalHTML = activeTese.texto_conteudo || ''
-      
-      // Extrair HTML do editor
       let editedHTML = extractHTMLFromEditor(editor)
       editedHTML = preserveInlineStyles(editedHTML)
-      
-      // Decidir qual HTML usar (original se não houve mudanças reais)
       const htmlToSave = decideHTMLToSave(originalHTML, editedHTML)
-      
-      // Log para debug
-      console.log('HTML original (primeiros 200 chars):', originalHTML.substring(0, 200))
-      console.log('HTML editado (primeiros 200 chars):', editedHTML.substring(0, 200))
-      console.log('HTML sendo salvo (primeiros 200 chars):', htmlToSave.substring(0, 200))
-      
+
       await updateMutation.mutateAsync({
         id: activeTese.id,
-        updates: {
-          texto_conteudo: htmlToSave,
-        },
+        updates: { texto_conteudo: htmlToSave },
       })
-
       toast({
         title: 'Salvo!',
         description: `"${activeTese.titulo}" foi salva com sucesso.`,
@@ -167,26 +180,18 @@ export default function ThesisEditor() {
   }
 
   const handleSaveAll = async () => {
-    if (!editor || teses.length === 0) return
-
+    if (!canSaveTeseContent || !editor || teses.length === 0) return
     try {
       const currentTese = teses[activeTeseIndex]
       const originalHTML = currentTese.texto_conteudo || ''
-      
-      // Extrair HTML do editor
       let editedHTML = extractHTMLFromEditor(editor)
       editedHTML = preserveInlineStyles(editedHTML)
-      
-      // Decidir qual HTML usar
       const htmlToSave = decideHTMLToSave(originalHTML, editedHTML)
 
       await updateMutation.mutateAsync({
         id: currentTese.id,
-        updates: {
-          texto_conteudo: htmlToSave,
-        },
+        updates: { texto_conteudo: htmlToSave },
       })
-
       toast({
         title: 'Salvo!',
         description: `Tese "${currentTese.titulo}" salva. Continue editando as outras.`,
@@ -202,41 +207,35 @@ export default function ThesisEditor() {
 
   const handleCopyHTML = async () => {
     if (!activeTese) return
-
     try {
-      // Copiar HTML original do banco (não o do editor que pode ter sido modificado)
-      const htmlContent = activeTese.texto_conteudo || ''
-      
+      let htmlContent = ''
+      if (editor) {
+        const live = extractHTMLFromEditor(editor)
+        htmlContent = live.trim()
+          ? preserveInlineStyles(live)
+          : (activeTese.texto_conteudo || '')
+      } else {
+        htmlContent = activeTese.texto_conteudo || ''
+      }
       if (!htmlContent) {
-        toast({
-          title: 'Erro',
-          description: 'Nenhum conteúdo para copiar',
-          variant: 'destructive',
-        })
+        toast({ title: 'Erro', description: 'Nenhum conteúdo para copiar', variant: 'destructive' })
         return
       }
-      
-      // Tentar método otimizado para Word primeiro
       try {
         await copyHTMLToWordClipboard(htmlContent)
-      } catch (error) {
-        // Se falhar, usar método alternativo
-        console.warn('Método principal falhou, usando alternativo:', error)
-        copyHTMLToWordAlternative(htmlContent)
+      } catch {
+        await copyHTMLToWordAlternative(htmlContent)
       }
-      
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
-      
       toast({
         title: 'Copiado!',
-        description: 'Conteúdo copiado no formato Word. Cole no Word (Ctrl+V) e escolha "Manter Formatação Original" ou "Usar Tema do Destino".',
+        description: 'Conteúdo copiado. Cole no Word (Ctrl+V) e escolha "Manter Formatação Original".',
       })
     } catch (error: any) {
-      console.error('Erro ao copiar:', error)
       toast({
         title: 'Erro',
-        description: error.message || 'Erro ao copiar. Tente selecionar o texto manualmente e copiar.',
+        description: error.message || 'Erro ao copiar.',
         variant: 'destructive',
       })
     }
@@ -244,27 +243,16 @@ export default function ThesisEditor() {
 
   const handleExport = async () => {
     if (!editor || !activeTese) return
-
     try {
-      // SEMPRE usar o HTML salvo no banco (que veio do Word original)
-      // NUNCA usar editor.getHTML() pois o Tiptap modifica/normaliza o HTML
-      const htmlContent = activeTese.texto_conteudo || ''
-      
+      const live = extractHTMLFromEditor(editor)
+      const htmlContent = live.trim()
+        ? preserveInlineStyles(live)
+        : (activeTese.texto_conteudo || '')
       if (!htmlContent) {
-        toast({
-          title: 'Erro',
-          description: 'Nenhum conteúdo encontrado para exportar',
-          variant: 'destructive',
-        })
+        toast({ title: 'Erro', description: 'Nenhum conteúdo para exportar', variant: 'destructive' })
         return
       }
-      
-      // Debug: log do HTML que será convertido
-      console.log('HTML sendo convertido para DOCX:', htmlContent.substring(0, 500) + '...')
-
-      // Converter HTML para elementos docx preservando formatação
       const contentElements = htmlToDocxElements(htmlContent)
-
       const doc = new Document({
         sections: [
           {
@@ -272,142 +260,104 @@ export default function ThesisEditor() {
               page: {
                 size: {
                   orientation: PageOrientation.PORTRAIT,
-                  width: 11906, // A4 width em twips (210mm = 8.27" = 11906 twips)
-                  height: 16838, // A4 height em twips (297mm = 11.69" = 16838 twips)
+                  width: 11906,
+                  height: 16838,
                 },
-                margin: {
-                  top: 1440, // 1 polegada (em twips) - igual ao código antigo
-                  right: 1440,
-                  bottom: 1440,
-                  left: 1440,
-                },
+                margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
               },
             },
-            children: [
-              // Apenas o conteúdo da tese com formatação preservada (sem título e descrição)
-              ...contentElements,
-            ],
+            children: contentElements,
           },
         ],
       })
-
       const blob = await Packer.toBlob(doc)
-      // Usar título da tese como nome do arquivo (sanitizado)
-      const fileName = activeTese.titulo
-        .replace(/[^a-z0-9]/gi, '_')
-        .replace(/_+/g, '_')
-        .substring(0, 50) || 'tese'
+      const fileName = activeTese.titulo.replace(/[^a-z0-9]/gi, '_').replace(/_+/g, '_').substring(0, 50) || 'tese'
       saveAs(blob, `${fileName}.docx`)
-
-      toast({
-        title: 'Exportado!',
-        description: 'O documento foi gerado com formatação preservada.',
-      })
+      toast({ title: 'Exportado!', description: 'Documento gerado com formatação preservada.' })
     } catch (error: any) {
-      console.error('Erro ao exportar:', error)
-      toast({
-        title: 'Erro',
-        description: error.message || 'Erro ao exportar',
-        variant: 'destructive',
-      })
+      toast({ title: 'Erro', description: error.message || 'Erro ao exportar', variant: 'destructive' })
     }
   }
 
   const handleExportAll = async () => {
     if (teses.length === 0) return
-
     try {
       const sections = teses.map((tese) => {
-        // Converter HTML para elementos docx preservando formatação
-        const contentElements = tese.texto_conteudo
-          ? htmlToDocxElements(tese.texto_conteudo)
-          : []
-
+        const contentElements = tese.texto_conteudo ? htmlToDocxElements(tese.texto_conteudo) : []
         return {
           properties: {},
           children: [
-            // Título da tese
             new Paragraph({
-              children: [
-                new TextRun({
-                  text: tese.titulo,
-                  bold: true,
-                  size: 32,
-                }),
-              ],
+              children: [new TextRun({ text: tese.titulo, bold: true, size: 32 })],
               heading: HeadingLevel.HEADING_1,
               spacing: { after: 300 },
             }),
-            // Descrição (se houver)
             ...(tese.descricao
               ? [
                   new Paragraph({
-                    children: [
-                      new TextRun({
-                        text: tese.descricao,
-                        italics: true,
-                        size: 22,
-                      }),
-                    ],
+                    children: [new TextRun({ text: tese.descricao, italics: true, size: 22 })],
                     spacing: { after: 200 },
                   }),
                 ]
               : []),
-            // Espaço
-            new Paragraph({
-              children: [new TextRun({ text: '' })],
-              spacing: { after: 200 },
-            }),
-            // Conteúdo da tese com formatação preservada
+            new Paragraph({ children: [new TextRun({ text: '' })], spacing: { after: 200 } }),
             ...contentElements,
-            // Separador entre teses
+            new Paragraph({ children: [new TextRun({ text: '' })], spacing: { after: 400 } }),
             new Paragraph({
-              children: [new TextRun({ text: '' })],
+              children: [new TextRun({ text: '─'.repeat(50), color: 'CCCCCC' })],
               spacing: { after: 400 },
             }),
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: '─'.repeat(50),
-                  color: 'CCCCCC',
-                }),
-              ],
-              spacing: { after: 400 },
-            }),
-            new Paragraph({
-              children: [new TextRun({ text: '' })],
-              spacing: { after: 400 },
-            }),
+            new Paragraph({ children: [new TextRun({ text: '' })], spacing: { after: 400 } }),
           ],
         }
       })
-
-      const doc = new Document({
-        sections,
-      })
-
+      const doc = new Document({ sections })
       const blob = await Packer.toBlob(doc)
       saveAs(blob, `teses-${teses.length}-${Date.now()}.docx`)
-
-      toast({
-        title: 'Exportado!',
-        description: `${teses.length} tese(s) exportada(s) com sucesso.`,
-      })
+      toast({ title: 'Exportado!', description: `${teses.length} tese(s) exportada(s) com sucesso.` })
     } catch (error: any) {
-      toast({
-        title: 'Erro',
-        description: error.message || 'Erro ao exportar',
-        variant: 'destructive',
-      })
+      toast({ title: 'Erro', description: error.message || 'Erro ao exportar', variant: 'destructive' })
     }
   }
 
+  const ToolbarButton = ({
+    onClick,
+    active,
+    children,
+    label,
+  }: {
+    onClick: () => void
+    active?: boolean
+    children: React.ReactNode
+    label: string
+  }) => (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onClick}
+          className={cn(
+            'h-9 w-9 p-0 text-muted-foreground hover:bg-fenix-navy/10 hover:text-fenix-navy dark:hover:bg-fenix-purple-light/15 dark:hover:text-fenix-purple-light',
+            active && 'bg-fenix-navy/15 text-fenix-navy dark:bg-fenix-purple-dark/25 dark:text-fenix-purple-light'
+          )}
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="text-xs">
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  )
+
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div className="flex min-h-[60vh] items-center justify-center">
         <div className="text-center">
-          <div className="mb-4 h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto"></div>
-          <div className="text-lg">Carregando...</div>
+          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-fenix-purple-dark border-t-transparent dark:border-fenix-purple-light dark:border-t-transparent" />
+          <p className="text-muted-foreground">Carregando tese...</p>
         </div>
       </div>
     )
@@ -415,366 +365,341 @@ export default function ThesisEditor() {
 
   if (teses.length === 0) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-center">
-          <FileText className="mx-auto mb-4 h-12 w-12" style={{ color: '#101f2e' }} />
-          <div className="text-lg text-red-500">Tese(s) não encontrada(s)</div>
-          <Button className="mt-4" onClick={() => navigate('/dashboard')}>
-            Voltar ao Dashboard
-          </Button>
-        </div>
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4">
+        <FileText className="h-16 w-16 text-muted-foreground/50" />
+        <p className="text-lg font-medium text-foreground">Tese(s) não encontrada(s)</p>
+        <Button onClick={() => navigate('/dashboard')} variant="outline">
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Voltar ao Dashboard
+        </Button>
       </div>
     )
   }
 
   return (
-    <div className="flex h-screen flex-col bg-neutral-50">
-      {/* Header */}
-      <header className="sticky top-0 z-10 border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 shadow-sm">
-        <div className="flex items-center justify-between px-4 py-4">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" onClick={() => navigate('/dashboard')}>
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Voltar
-            </Button>
-            <div>
-              <h1 className="text-xl font-bold">
-                {isMultiple ? `${teses.length} Teses Selecionadas` : activeTese.titulo}
-              </h1>
-              {activeTese.area && (
-                <p className="text-sm" style={{ color: '#101f2e' }}>
-                  {activeTese.area}
-                </p>
+    <TooltipProvider delayDuration={300}>
+      <div className="flex h-[calc(100vh-3.5rem)] min-h-0 flex-col overflow-hidden lg:h-screen">
+        {/* Header Fênix */}
+        <header className="flex shrink-0 flex-col gap-3 border-b border-border bg-card px-4 py-3 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <Button variant="ghost" size="sm" onClick={() => navigate('/dashboard')} className="shrink-0">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Voltar
+              </Button>
+              <div className="min-w-0 flex-1">
+                <h1 className="truncate text-lg font-semibold text-foreground">
+                  {isMultiple ? `${teses.length} teses selecionadas` : activeTese.titulo}
+                </h1>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  {activeTese.area && (
+                    <Badge variant="outline" className={cn('gap-1', areaBadgeClass())}>
+                      {(() => {
+                        const AreaIcon = getAreaIcon(activeTese.area)
+                        return <AreaIcon className="h-3 w-3" aria-hidden />
+                      })()}
+                      {activeTese.area}
+                    </Badge>
+                  )}
+                  {activeTese.tipo_tese && (
+                    <Badge variant="outline" className={tipoTeseBadgeClass(activeTese.tipo_tese)}>
+                      {activeTese.tipo_tese}
+                    </Badge>
+                  )}
+                  {activeTese.assuntos?.slice(0, 2).map((a, i) => (
+                    <Badge key={i} variant="outline" className={assuntoBadgeClass()}>
+                      {a}
+                    </Badge>
+                  ))}
+                  {activeTese.assuntos && activeTese.assuntos.length > 2 && (
+                    <Badge variant="secondary" className="text-xs">
+                      +{activeTese.assuntos.length - 2}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSidebarOpen(!sidebarOpen)}
+                    className="shrink-0"
+                  >
+                    {sidebarOpen ? (
+                      <PanelRightClose className="h-4 w-4" />
+                    ) : (
+                      <PanelRightOpen className="h-4 w-4" />
+                    )}
+                    <span className="ml-2 hidden sm:inline">
+                      {sidebarOpen ? 'Ocultar' : 'Mostrar'} IA
+                    </span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Assistente de IA para edição</TooltipContent>
+              </Tooltip>
+              {isMultiple && (
+                <>
+                  <Button variant="outline" size="sm" onClick={handleExportAll}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Exportar Todas
+                  </Button>
+                  {canSaveTeseContent && (
+                    <Button
+                      size="sm"
+                      onClick={handleSaveAll}
+                      disabled={updateMutation.isPending}
+                      className="bg-gradient-to-r from-fenix-purple-dark to-fenix-purple-light text-white hover:opacity-95"
+                    >
+                      <Save className="mr-2 h-4 w-4" />
+                      Salvar Atual
+                    </Button>
+                  )}
+                </>
+              )}
+              {!isMultiple && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCopyHTML}
+                    disabled={!activeTese}
+                    title="Copiar para Word"
+                  >
+                    {copied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+                    {copied ? 'Copiado!' : 'Copiar'}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleExport}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Word
+                  </Button>
+                  {canSaveTeseContent && (
+                    <Button
+                      size="sm"
+                      onClick={handleSave}
+                      disabled={updateMutation.isPending}
+                      className="bg-gradient-to-r from-fenix-purple-dark to-fenix-purple-light text-white hover:opacity-95"
+                    >
+                      <Save className="mr-2 h-4 w-4" />
+                      {updateMutation.isPending ? 'Salvando...' : 'Salvar'}
+                    </Button>
+                  )}
+                </>
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-            >
-              {sidebarOpen ? (
-                <PanelRightClose className="h-4 w-4" />
-              ) : (
-                <PanelRightOpen className="h-4 w-4" />
-              )}
-            </Button>
-            {isMultiple && (
-              <>
-                <Button variant="outline" onClick={handleExportAll}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Exportar Todas
-                </Button>
-                <Button onClick={handleSaveAll} disabled={updateMutation.isPending}>
-                  <Save className="mr-2 h-4 w-4" />
-                  Salvar Atual
-                </Button>
-              </>
-            )}
-            {!isMultiple && (
-              <>
-                <Button 
-                  onClick={handleCopyHTML} 
-                  disabled={!activeTese}
-                  variant="outline"
-                  title="Copiar HTML original para colar no Word (preserva formatação)"
-                >
-                  {copied ? (
-                    <>
-                      <Check className="mr-2 h-4 w-4" />
-                      Copiado!
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="mr-2 h-4 w-4" />
-                      Copiar HTML
-                    </>
-                  )}
-                </Button>
-                <Button variant="outline" onClick={handleExport}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Exportar Word
-                </Button>
-                <Button onClick={handleSave} disabled={updateMutation.isPending}>
-                  <Save className="mr-2 h-4 w-4" />
-                  {updateMutation.isPending ? 'Salvando...' : 'Salvar'}
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
-      </header>
 
-      {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Editor Area */}
-        <div className={`flex-1 flex flex-col overflow-hidden transition-all ${sidebarOpen ? 'mr-[400px]' : ''}`}>
+          {!canSaveTeseContent && (
+            <p className="rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
+              Você pode editar, usar a barra de ferramentas e a IA para montar o texto localmente; use{' '}
+              <strong className="font-semibold">Copiar</strong> ou <strong className="font-semibold">Word</strong> para
+              levar o resultado. O botão Salvar não está disponível: seu perfil não pode alterar o texto padrão salvo no
+              acervo.
+            </p>
+          )}
+
           {/* Navegação entre teses (múltiplas) */}
           {isMultiple && teses.length > 1 && (
-            <Card className="m-4 mb-0 border-0 shadow-md">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 overflow-x-auto">
-                  <span className="text-sm font-medium" style={{ color: '#101f2e' }}>Navegar:</span>
-                  {teses.map((tese, index) => (
-                    <Button
-                      key={tese.id}
-                      variant={index === activeTeseIndex ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => {
-                        setActiveTeseIndex(index)
-                      }}
-                      className="whitespace-nowrap"
-                    >
-                      {tese.titulo}
-                      {index === activeTeseIndex && ' ✓'}
-                    </Button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Info da tese atual */}
-          {isMultiple && (
-            <Card className="mx-4 mb-4 border-0 shadow-md">
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h2 className="text-lg font-semibold">{activeTese.titulo}</h2>
-                    <p className="text-sm" style={{ color: '#101f2e' }}>{activeTese.descricao}</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {activeTese.tipo_tese && (
-                        <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs text-emerald-700">
-                          {activeTese.tipo_tese}
-                        </span>
-                      )}
-                      {activeTese.area && (
-                        <span className="rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">
-                          {activeTese.area}
-                        </span>
-                      )}
-                      {activeTese.assuntos?.map((a, i) => (
-                        <span
-                          key={i}
-                          className="rounded-full bg-primary/10 px-2 py-1 text-xs text-primary"
-                        >
-                          {a}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="text-right text-sm" style={{ color: '#101f2e' }}>
-                    {activeTeseIndex + 1} de {teses.length}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Editor */}
-          <Card className="mx-4 mb-4 flex-1 flex flex-col border-0 shadow-md overflow-hidden min-h-0">
-            <CardHeader className="border-b shrink-0">
-              <div className="flex items-center justify-between">
-                <CardTitle>Editor de Conteúdo</CardTitle>
-                {isMultiple && (
-                  <span className="text-sm" style={{ color: '#101f2e' }}>
-                    {activeTeseIndex + 1} de {teses.length}
-                  </span>
-                )}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              <span className="shrink-0 text-xs font-medium text-muted-foreground">Navegar:</span>
+              <div className="flex gap-1.5">
+                {teses.map((tese, index) => (
+                  <Button
+                    key={tese.id}
+                    variant={index === activeTeseIndex ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setActiveTeseIndex(index)}
+                    className={cn(
+                      'shrink-0 whitespace-nowrap',
+                      index === activeTeseIndex &&
+                        'bg-fenix-navy text-white hover:bg-fenix-navy/90 dark:bg-fenix-purple-dark dark:text-white dark:hover:bg-fenix-purple-dark/90'
+                    )}
+                  >
+                    {tese.titulo.length > 30 ? `${tese.titulo.slice(0, 30)}…` : tese.titulo}
+                    {index === activeTeseIndex && ' ✓'}
+                  </Button>
+                ))}
               </div>
-            </CardHeader>
-            <CardContent className="flex-1 flex flex-col p-0 overflow-hidden min-h-0">
-              {/* Toolbar melhorada */}
-              <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b backdrop-blur p-3 shrink-0" style={{ backgroundColor: '#101f2e' }}>
-                <div className="flex items-center gap-1 border-r pr-2" style={{ borderColor: 'rgba(255,255,255,0.2)' }}>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
+            </div>
+          )}
+        </header>
+
+        {/* Main Content */}
+        <div className="relative flex min-h-0 flex-1 overflow-x-hidden">
+          <div
+            className={cn(
+              'relative z-0 flex min-h-0 flex-1 flex-col transition-[margin] duration-200 ease-out',
+              sidebarOpen && 'lg:mr-[380px]'
+            )}
+          >
+            {/* Editor Card */}
+            <div className="flex flex-1 flex-col overflow-hidden border-t border-border bg-muted/30">
+              {/* Toolbar Fênix */}
+              <div className="flex flex-wrap items-center gap-1 border-b border-border bg-card px-3 py-2">
+                <div className="flex items-center gap-0.5 border-r border-border pr-2">
+                  <ToolbarButton
                     onClick={() => editor?.chain().focus().toggleBold().run()}
-                    className={`text-white hover:bg-white/20 ${editor?.isActive('bold') ? 'bg-white/30' : ''}`}
+                    active={editor?.isActive('bold')}
+                    label="Negrito"
                   >
-                    <strong className="font-bold text-white">B</strong>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
+                    <Bold className="h-4 w-4" />
+                  </ToolbarButton>
+                  <ToolbarButton
                     onClick={() => editor?.chain().focus().toggleItalic().run()}
-                    className={`text-white hover:bg-white/20 ${editor?.isActive('italic') ? 'bg-white/30' : ''}`}
+                    active={editor?.isActive('italic')}
+                    label="Itálico"
                   >
-                    <em className="italic text-white">I</em>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
+                    <Italic className="h-4 w-4" />
+                  </ToolbarButton>
+                  <ToolbarButton
                     onClick={() => editor?.chain().focus().toggleUnderline().run()}
-                    className={`text-white hover:bg-white/20 ${editor?.isActive('underline') ? 'bg-white/30' : ''}`}
+                    active={editor?.isActive('underline')}
+                    label="Sublinhado"
                   >
-                    <u className="text-white">U</u>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
+                    <Underline className="h-4 w-4" />
+                  </ToolbarButton>
+                  <ToolbarButton
                     onClick={() => editor?.chain().focus().toggleStrike().run()}
-                    className={`text-white hover:bg-white/20 ${editor?.isActive('strike') ? 'bg-white/30' : ''}`}
+                    active={editor?.isActive('strike')}
+                    label="Riscado"
                   >
-                    <span className="line-through text-white">S</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
+                    <Strikethrough className="h-4 w-4" />
+                  </ToolbarButton>
+                  <ToolbarButton
                     onClick={() => editor?.chain().focus().toggleHighlight().run()}
-                    className={`text-white hover:bg-white/20 ${editor?.isActive('highlight') ? 'bg-white/30' : ''}`}
+                    active={editor?.isActive('highlight')}
+                    label="Destacar"
                   >
-                    <span className="bg-yellow-200 px-1 text-gray-900">H</span>
-                  </Button>
+                    <Highlighter className="h-4 w-4" />
+                  </ToolbarButton>
                 </div>
-                <div className="flex items-center gap-1 border-r pr-2" style={{ borderColor: 'rgba(255,255,255,0.2)' }}>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
+                <div className="flex items-center gap-0.5 border-r border-border pr-2">
+                  <ToolbarButton
                     onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()}
-                    className={`text-white hover:bg-white/20 ${editor?.isActive('heading', { level: 1 }) ? 'bg-white/30' : ''}`}
+                    active={editor?.isActive('heading', { level: 1 })}
+                    label="Título 1"
                   >
-                    <span className="text-white">H1</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
+                    <Heading1 className="h-4 w-4" />
+                  </ToolbarButton>
+                  <ToolbarButton
                     onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}
-                    className={`text-white hover:bg-white/20 ${editor?.isActive('heading', { level: 2 }) ? 'bg-white/30' : ''}`}
+                    active={editor?.isActive('heading', { level: 2 })}
+                    label="Título 2"
                   >
-                    <span className="text-white">H2</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
+                    <Heading2 className="h-4 w-4" />
+                  </ToolbarButton>
+                  <ToolbarButton
                     onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()}
-                    className={`text-white hover:bg-white/20 ${editor?.isActive('heading', { level: 3 }) ? 'bg-white/30' : ''}`}
+                    active={editor?.isActive('heading', { level: 3 })}
+                    label="Título 3"
                   >
-                    <span className="text-white">H3</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
+                    <Heading3 className="h-4 w-4" />
+                  </ToolbarButton>
+                  <ToolbarButton
                     onClick={() => editor?.chain().focus().toggleHeading({ level: 4 }).run()}
-                    className={`text-white hover:bg-white/20 ${editor?.isActive('heading', { level: 4 }) ? 'bg-white/30' : ''}`}
+                    active={editor?.isActive('heading', { level: 4 })}
+                    label="Título 4"
                   >
-                    <span className="text-white">H4</span>
-                  </Button>
+                    <Heading4 className="h-4 w-4" />
+                  </ToolbarButton>
                 </div>
-                <div className="flex items-center gap-1 border-r pr-2" style={{ borderColor: 'rgba(255,255,255,0.2)' }}>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
+                <div className="flex items-center gap-0.5 border-r border-border pr-2">
+                  <ToolbarButton
                     onClick={() => editor?.chain().focus().setTextAlign('left').run()}
-                    className={`text-white hover:bg-white/20 ${editor?.isActive({ textAlign: 'left' }) ? 'bg-white/30' : ''}`}
+                    active={editor?.isActive({ textAlign: 'left' })}
+                    label="Alinhar à esquerda"
                   >
-                    <span className="text-white">⬅</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
+                    <AlignLeft className="h-4 w-4" />
+                  </ToolbarButton>
+                  <ToolbarButton
                     onClick={() => editor?.chain().focus().setTextAlign('center').run()}
-                    className={`text-white hover:bg-white/20 ${editor?.isActive({ textAlign: 'center' }) ? 'bg-white/30' : ''}`}
+                    active={editor?.isActive({ textAlign: 'center' })}
+                    label="Centralizar"
                   >
-                    <span className="text-white">⬌</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
+                    <AlignCenter className="h-4 w-4" />
+                  </ToolbarButton>
+                  <ToolbarButton
                     onClick={() => editor?.chain().focus().setTextAlign('right').run()}
-                    className={`text-white hover:bg-white/20 ${editor?.isActive({ textAlign: 'right' }) ? 'bg-white/30' : ''}`}
+                    active={editor?.isActive({ textAlign: 'right' })}
+                    label="Alinhar à direita"
                   >
-                    <span className="text-white">➡</span>
-                  </Button>
+                    <AlignRight className="h-4 w-4" />
+                  </ToolbarButton>
                 </div>
-                <div className="flex items-center gap-1 border-r pr-2" style={{ borderColor: 'rgba(255,255,255,0.2)' }}>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
+                <div className="flex items-center gap-0.5 border-r border-border pr-2">
+                  <ToolbarButton
                     onClick={() => editor?.chain().focus().toggleBulletList().run()}
-                    className={`text-white hover:bg-white/20 ${editor?.isActive('bulletList') ? 'bg-white/30' : ''}`}
+                    active={editor?.isActive('bulletList')}
+                    label="Lista com marcadores"
                   >
-                    <span className="text-white">•</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
+                    <List className="h-4 w-4" />
+                  </ToolbarButton>
+                  <ToolbarButton
                     onClick={() => editor?.chain().focus().toggleOrderedList().run()}
-                    className={`text-white hover:bg-white/20 ${editor?.isActive('orderedList') ? 'bg-white/30' : ''}`}
+                    active={editor?.isActive('orderedList')}
+                    label="Lista numerada"
                   >
-                    <span className="text-white">1.</span>
-                  </Button>
+                    <ListOrdered className="h-4 w-4" />
+                  </ToolbarButton>
                 </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
+                <div className="flex items-center gap-0.5">
+                  <ToolbarButton
                     onClick={() => editor?.chain().focus().setHorizontalRule().run()}
-                    className="text-white hover:bg-white/20"
+                    label="Linha horizontal"
                   >
-                    <span className="text-white">─</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
+                    <Minus className="h-4 w-4" />
+                  </ToolbarButton>
+                  <ToolbarButton
                     onClick={() => editor?.chain().focus().undo().run()}
-                    className="text-white hover:bg-white/20"
+                    label="Desfazer"
                   >
-                    <span className="text-white">↶</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
+                    <Undo2 className="h-4 w-4" />
+                  </ToolbarButton>
+                  <ToolbarButton
                     onClick={() => editor?.chain().focus().redo().run()}
-                    className="text-white hover:bg-white/20"
+                    label="Refazer"
                   >
-                    <span className="text-white">↷</span>
-                  </Button>
+                    <Redo2 className="h-4 w-4" />
+                  </ToolbarButton>
                 </div>
               </div>
 
               {/* Editor Content */}
-              <div className="flex-1 overflow-y-auto bg-white min-h-0">
+              <div className="flex-1 overflow-y-auto bg-background">
                 <EditorContent editor={editor} />
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </div>
 
-        {/* AI Sidebar */}
-        {sidebarOpen && (
-          <div className="absolute right-0 top-0 bottom-0 w-[400px] border-l bg-white shadow-lg">
+          {sidebarOpen && (
+            <button
+              type="button"
+              aria-label="Fechar assistente de IA"
+              className="absolute inset-0 z-10 bg-background/60 backdrop-blur-[2px] transition-opacity duration-200 ease-out lg:hidden"
+              onClick={() => setSidebarOpen(false)}
+            />
+          )}
+
+          {/* AI Sidebar — permanece montado para transição; estado do chat preservado */}
+          <aside
+            className={cn(
+              'absolute bottom-0 right-0 top-0 z-20 flex min-h-0 w-full max-w-full flex-col overflow-hidden border-l border-border bg-card shadow-xl will-change-transform',
+              'sm:max-w-md',
+              'transition-transform duration-200 ease-out lg:w-[380px] lg:max-w-[380px]',
+              sidebarOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'
+            )}
+            aria-hidden={!sidebarOpen}
+          >
             <EditorAISidebar
               editor={editor}
               tese={activeTese}
-              onUpdateContent={(content) => {
-                if (editor) {
-                  editor.commands.setContent(content)
-                }
-              }}
+              onUpdateContent={(content) => editor?.commands.setContent(content)}
             />
-          </div>
-        )}
+          </aside>
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
   )
 }

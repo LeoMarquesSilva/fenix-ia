@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useRef } from 'react'
+import { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react'
 import { User } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import type { Profile } from '@/types/profiles'
@@ -15,6 +15,8 @@ interface AuthContextType {
   isSupervisor: boolean
   isEstagiario: boolean
   canEditAllTeses: boolean
+  /** Advogado nunca; admin/supervisor sempre; estagiário só tese própria. */
+  canEditTeseContent: (teseUserId: string | null) => boolean
   canDeleteTeses: boolean
   canManageUsers: boolean
   refreshProfile: () => Promise<void>
@@ -297,6 +299,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const canDeleteTeses = isAdmin || isAdvogado || isSupervisor
   const canManageUsers = isAdmin
 
+  const canEditTeseContent = useCallback(
+    (teseUserId: string | null) => {
+      if (!user) return false
+      if (profile?.role === 'advogado') return false
+      if (isAdmin || isSupervisor) return true
+      return teseUserId != null && teseUserId === user.id
+    },
+    [user, profile?.role, isAdmin, isSupervisor]
+  )
+
   return (
     <AuthContext.Provider 
       value={{ 
@@ -311,6 +323,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isSupervisor,
         isEstagiario,
         canEditAllTeses,
+        canEditTeseContent,
         canDeleteTeses,
         canManageUsers,
         refreshProfile

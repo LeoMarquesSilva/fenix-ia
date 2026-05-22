@@ -1,6 +1,6 @@
 export type UserRole = 'admin' | 'advogado' | 'estagiario' | 'supervisor'
 
-export type AreaDireito = 'Trabalhista' | 'Reestruturação' | 'Societário e Contratos' | 'Distressed Deals' | 'Cível' | null
+export type AreaDireito = 'Trabalhista' | 'Reestruturação' | 'Societário e Contratos' | 'Distressed Deals' | 'Cível' | 'Operações Legais' | 'Geral' | 'T.I' | null
 
 export interface Profile {
   id: string
@@ -11,6 +11,7 @@ export interface Profile {
   email: string
   ativo: boolean
   area: AreaDireito
+  avatar_url?: string | null
 }
 
 export interface ProfileInsert {
@@ -20,6 +21,7 @@ export interface ProfileInsert {
   role?: UserRole
   ativo?: boolean
   area?: AreaDireito
+  avatar_url?: string | null
 }
 
 export interface ProfileUpdate {
@@ -28,6 +30,7 @@ export interface ProfileUpdate {
   role?: UserRole
   ativo?: boolean
   area?: AreaDireito
+  avatar_url?: string | null
 }
 
 export const AREAS_DIREITO: AreaDireito[] = [
@@ -35,5 +38,17 @@ export const AREAS_DIREITO: AreaDireito[] = [
   'Reestruturação',
   'Societário e Contratos',
   'Distressed Deals',
-  'Cível'
+  'Cível',
+  'Operações Legais',
+  'Geral',
+  'T.I',
 ]
+
+export interface ColaboradorPendente {
+  id: string
+  nome: string
+  email: string
+  departamento: string | null
+  avatar_url: string | null
+  created_at: string
+}

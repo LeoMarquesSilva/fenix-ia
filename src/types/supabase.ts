@@ -19,6 +19,7 @@ export interface Database {
           role: string
           ativo: boolean
           area: string | null
+          avatar_url: string | null
         }
         Insert: {
           id: string
@@ -29,6 +30,7 @@ export interface Database {
           role?: string
           ativo?: boolean
           area?: string | null
+          avatar_url?: string | null
         }
         Update: {
           id?: string
@@ -39,7 +41,124 @@ export interface Database {
           role?: string
           ativo?: boolean
           area?: string | null
+          avatar_url?: string | null
         }
+        Relationships: []
+      }
+      favoritos: {
+        Row: {
+          id: string
+          user_id: string
+          tese_id: string
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          tese_id: string
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          tese_id?: string
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'favoritos_tese_id_fkey'
+            columns: ['tese_id']
+            isOneToOne: false
+            referencedRelation: 'teses'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      colaboradores_pendentes: {
+        Row: {
+          id: string
+          nome: string
+          email: string
+          departamento: string | null
+          avatar_url: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          nome: string
+          email: string
+          departamento?: string | null
+          avatar_url?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          nome?: string
+          email?: string
+          departamento?: string | null
+          avatar_url?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      tese_solicitacoes: {
+        Row: {
+          id: string
+          created_at: string
+          user_id: string
+          titulo_sugerido: string
+          descricao: string | null
+          area: string | null
+          status: string
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          user_id: string
+          titulo_sugerido: string
+          descricao?: string | null
+          area?: string | null
+          status?: string
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          user_id?: string
+          titulo_sugerido?: string
+          descricao?: string | null
+          area?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
+      tese_visualizacoes: {
+        Row: {
+          id: string
+          created_at: string
+          tese_id: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          tese_id: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          tese_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'tese_visualizacoes_tese_id_fkey'
+            columns: ['tese_id']
+            isOneToOne: false
+            referencedRelation: 'teses'
+            referencedColumns: ['id']
+          },
+        ]
       }
       teses: {
         Row: {
@@ -84,12 +203,22 @@ export interface Database {
           user_id?: string | null
           tipo_tese?: string | null
         }
+        Relationships: []
       }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      ranking_teses_por_acesso: {
+        Args: { p_limit: number }
+        Returns: {
+          tese_id: string
+          titulo: string
+          identificador: string
+          acessos: number
+        }[]
+      }
       search_teses: {
         Args: {
           search_term: string

@@ -18,14 +18,19 @@ import {
   X,
   Sparkles,
   Search,
+  ExternalLink,
 } from 'lucide-react'
 import type { Editor } from '@tiptap/react'
 import type { Tese } from '@/types/supabase'
+import { cn } from '@/lib/utils'
+import { AI_MODEL, promptDeveAplicar } from '@/lib/ai-config'
 
 interface EditorAISidebarProps {
   editor: Editor | null
   tese: Tese | null
   onUpdateContent?: (content: string) => void
+  /** Quando true, não aplica HTML no editor (ex.: perfil advogado). */
+  readOnly?: boolean
 }
 
 interface Message {
@@ -33,30 +38,60 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
+  userPrompt?: string
 }
 
 interface WebSearchResult {
   title: string
   url: string
   snippet: string
+  source?: string
 }
 
-export function EditorAISidebar({ editor, tese, onUpdateContent }: EditorAISidebarProps) {
+interface Grupo {
+  id: string
+  nome: string
+  documentoIds: string[]
+  modeloIds: string[]
+  createdAt: string
+}
+
+const GRUPOS_KEY = 'fenix-ia-grupos'
+
+export function EditorAISidebar({
+  editor,
+  tese,
+  onUpdateContent,
+  readOnly = false,
+}: EditorAISidebarProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [activeTab, setActiveTab] = useState('chat')
   const [documentos, setDocumentos] = useState<File[]>([])
   const [modelos, setModelos] = useState<File[]>([])
-  const [_jurisprudencia, _setJurisprudencia] = useState<string[]>([])
+  const [jurisprudenciaQuery, setJurisprudenciaQuery] = useState('')
   const [webSearchQuery, setWebSearchQuery] = useState('')
   const [webSearchResults, setWebSearchResults] = useState<WebSearchResult[]>([])
   const [isSearchingWeb, setIsSearchingWeb] = useState(false)
   const [showAtMenu, setShowAtMenu] = useState(false)
   const [showSlashMenu, setShowSlashMenu] = useState(false)
+  const [grupos, setGrupos] = useState<Grupo[]>(() => {
+    try {
+      const s = localStorage.getItem(GRUPOS_KEY)
+      return s ? JSON.parse(s) : []
+    } catch {
+      return []
+    }
+  })
+  const [novoGrupoNome, setNovoGrupoNome] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
+
+  useEffect(() => {
+    localStorage.setItem(GRUPOS_KEY, JSON.stringify(grupos))
+  }, [grupos])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -66,18 +101,44 @@ export function EditorAISidebar({ editor, tese, onUpdateContent }: EditorAISideb
     scrollToBottom()
   }, [messages])
 
-  // Detectar @ e / no input
   useEffect(() => {
     const lastChar = input[input.length - 1]
-    if (lastChar === '@') {
-      setShowAtMenu(true)
-    } else if (lastChar === '/') {
-      setShowSlashMenu(true)
-    } else {
+    if (lastChar === '@') setShowAtMenu(true)
+    else if (lastChar === '/') setShowSlashMenu(true)
+    else {
       setShowAtMenu(false)
       setShowSlashMenu(false)
     }
   }, [input])
+
+  const buildContext = async () => {
+    const editorContent = editor?.getHTML() || ''
+    const documentosContent = await Promise.all(
+      documentos.map(async (file) => {
+        try {
+          const text = await file.text()
+          return { name: file.name, content: text.substring(0, 3000) }
+        } catch {
+          return { name: file.name, content: '(arquivo binário - use .txt ou .html)' }
+        }
+      })
+    )
+    const modelosContent = await Promise.all(
+      modelos.map(async (file) => {
+        try {
+          const text = await file.text()
+          return { name: file.name, content: text.substring(0, 2000) }
+        } catch {
+          return { name: file.name, content: '(arquivo binário - use .txt ou .html)' }
+        }
+      })
+    )
+    return {
+      editorContent,
+      documentosContent,
+      modelosContent,
+    }
+  }
 
   const handleSendMessage = async () => {
     if (!input.trim() || isGenerating) return
@@ -88,36 +149,34 @@ export function EditorAISidebar({ editor, tese, onUpdateContent }: EditorAISideb
       content: input,
       timestamp: new Date(),
     }
-
     setMessages((prev) => [...prev, userMessage])
     const currentInput = input
     setInput('')
     setIsGenerating(true)
 
     try {
-      // Obter conteúdo atual do editor
-      const editorContent = editor?.getHTML() || ''
-      
-      // Processar documentos
-      const documentosContent = await Promise.all(
-        documentos.map(async (file) => {
-          const text = await file.text()
-          return { name: file.name, content: text.substring(0, 2000) }
-        })
-      )
+      const { editorContent, documentosContent, modelosContent } = await buildContext()
 
-      // Construir contexto
       const context = `
 Tese atual: ${tese?.titulo || 'Sem título'}
 Área: ${tese?.area || 'Não especificada'}
+Assuntos: ${tese?.assuntos?.join(', ') || 'Não especificados'}
 Conteúdo atual da tese:
-${editorContent.substring(0, 3000)}
+${editorContent.substring(0, 4000)}
 
-${documentosContent.length > 0 ? `\nDocumentos anexados:\n${documentosContent.map(d => `${d.name}: ${d.content}`).join('\n\n')}` : ''}
-${webSearchResults.length > 0 ? `\nPesquisas web recentes:\n${webSearchResults.map(r => `${r.title}: ${r.snippet}`).join('\n\n')}` : ''}
+${documentosContent.length > 0 ? `\nDocumentos anexados (use como referência):\n${documentosContent.map((d) => `--- ${d.name} ---\n${d.content}`).join('\n\n')}` : ''}
+${modelosContent.length > 0 ? `\nModelos de estilo (imite a formatação e tom):\n${modelosContent.map((m) => `--- ${m.name} ---\n${m.content}`).join('\n\n')}` : ''}
+${webSearchResults.length > 0 ? `\nPesquisas web recentes:\n${webSearchResults.map((r) => `[${r.title}] ${r.snippet} - ${r.url}`).join('\n')}` : ''}
 `
 
-      // Chamar IA
+      const systemPrompt = `Você é um assistente jurídico especializado em direito brasileiro da Fênix I.A.
+Ajude o usuário a melhorar e editar teses jurídicas.
+- Use linguagem jurídica adequada e precisa
+- Cite fundamentos legais quando relevante
+- Quando o usuário pedir para APLICAR mudanças (melhorar, reescrever, expandir, fundamentar, adicionar, corrigir), forneça o conteúdo em HTML formatado dentro de \`\`\`html ... \`\`\`
+- Para prompts como /resumir, /explicar, /analisar: responda com análise/sugestões em texto, NÃO forneça HTML para aplicar
+- Seja objetivo e estruturado`
+
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -125,47 +184,37 @@ ${webSearchResults.length > 0 ? `\nPesquisas web recentes:\n${webSearchResults.m
           Authorization: `Bearer ${import.meta.env.VITE_OPENAI_API_KEY || ''}`,
         },
         body: JSON.stringify({
-          model: 'gpt-4-turbo-preview',
+          model: AI_MODEL,
           messages: [
-            {
-              role: 'system',
-              content: `Você é um assistente jurídico especializado em direito brasileiro. 
-Ajude o usuário a melhorar e editar teses jurídicas. 
-Forneça sugestões, correções e melhorias no conteúdo jurídico.
-Seja objetivo, preciso e use linguagem jurídica adequada.
-Quando o usuário pedir para aplicar mudanças, forneça o HTML formatado.`,
-            },
-            {
-              role: 'user',
-              content: `${context}\n\nInstrução do usuário: ${currentInput}`,
-            },
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `${context}\n\nInstrução do usuário: ${currentInput}` },
           ],
           temperature: 0.7,
-          max_tokens: 2000,
+          max_tokens: 4000,
         }),
       })
 
-      if (!response.ok) {
-        throw new Error('Erro ao chamar IA')
-      }
+      if (!response.ok) throw new Error('Erro ao chamar IA')
 
       const data = await response.json()
       const assistantContent = data.choices[0]?.message?.content || 'Erro ao gerar resposta'
 
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: assistantContent,
-        timestamp: new Date(),
-      }
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: assistantContent,
+          timestamp: new Date(),
+          userPrompt: currentInput,
+        },
+      ])
 
-      setMessages((prev) => [...prev, assistantMessage])
-
-      // Se a resposta contém HTML, oferecer para aplicar
-      if (assistantContent.includes('<') && assistantContent.includes('>')) {
+      const hasHtml = assistantContent.includes('```html') || (assistantContent.includes('<p>') && assistantContent.includes('</p>'))
+      if (hasHtml && promptDeveAplicar(currentInput)) {
         toast({
           title: 'Conteúdo gerado',
-          description: 'A resposta contém HTML. Use o botão "Aplicar" se quiser inserir no editor.',
+          description: 'Use o botão "Aplicar" para inserir no editor.',
         })
       }
     } catch (error: any) {
@@ -179,139 +228,146 @@ Quando o usuário pedir para aplicar mudanças, forneça o HTML formatado.`,
     }
   }
 
+  const hasApplicableHtml = (content: string) => {
+    const htmlMatch = content.match(/```html\n([\s\S]*?)\n```/) || content.match(/<p>[\s\S]*?<\/p>/)
+    return !!htmlMatch
+  }
+
   const handleApplyContent = (content: string) => {
-    // Extrair HTML da resposta
-    const htmlMatch = content.match(/```html\n([\s\S]*?)\n```/) || content.match(/<[^>]+>/)
+    if (readOnly) {
+      toast({
+        title: 'Somente leitura',
+        description: 'Seu perfil não pode alterar o conteúdo da tese.',
+        variant: 'destructive',
+      })
+      return
+    }
+    const htmlMatch = content.match(/```html\n([\s\S]*?)\n```/)
     if (htmlMatch && editor) {
-      const html = htmlMatch[1] || content
+      const html = htmlMatch[1].trim()
       editor.commands.setContent(html)
-      if (onUpdateContent) {
-        onUpdateContent(html)
+      onUpdateContent?.(html)
+      toast({ title: 'Conteúdo aplicado', description: 'O conteúdo foi inserido no editor.' })
+    } else {
+      const inlineMatch = content.match(/<p>[\s\S]*?<\/p>/)
+      if (inlineMatch && editor) {
+        editor.commands.insertContent(inlineMatch[0])
+        onUpdateContent?.(editor.getHTML())
+        toast({ title: 'Conteúdo inserido', description: 'O trecho foi adicionado ao editor.' })
+      } else if (editor) {
+        editor.commands.insertContent(`<p>${content.replace(/\n/g, '</p><p>')}</p>`)
+        toast({ title: 'Conteúdo inserido', description: 'O texto foi adicionado ao editor.' })
       }
-      toast({
-        title: 'Conteúdo aplicado',
-        description: 'O conteúdo foi inserido no editor.',
-      })
-    } else if (editor) {
-      // Se não tem HTML, inserir como texto formatado
-      editor.commands.insertContent(`<p>${content}</p>`)
-      toast({
-        title: 'Conteúdo inserido',
-        description: 'O texto foi inserido no editor.',
-      })
     }
   }
 
   const handleFileUpload = (files: FileList | null, type: 'documentos' | 'modelos') => {
     if (!files) return
     const fileArray = Array.from(files)
-    if (type === 'documentos') {
-      setDocumentos((prev) => [...prev, ...fileArray])
-    } else {
-      setModelos((prev) => [...prev, ...fileArray])
-    }
-    toast({
-      title: 'Arquivo(s) adicionado(s)',
-      description: `${fileArray.length} arquivo(s) adicionado(s) com sucesso.`,
-    })
+    if (type === 'documentos') setDocumentos((prev) => [...prev, ...fileArray])
+    else setModelos((prev) => [...prev, ...fileArray])
+    toast({ title: 'Arquivo(s) adicionado(s)', description: `${fileArray.length} arquivo(s) adicionado(s).` })
   }
 
   const handleWebSearch = async () => {
     if (!webSearchQuery.trim()) {
-      toast({
-        title: 'Campo vazio',
-        description: 'Digite algo para pesquisar',
-        variant: 'destructive',
-      })
+      toast({ title: 'Campo vazio', description: 'Digite algo para pesquisar', variant: 'destructive' })
       return
     }
-
     setIsSearchingWeb(true)
     try {
-      // Usar DuckDuckGo Instant Answer API (gratuita, sem API key)
       const searchQuery = encodeURIComponent(webSearchQuery)
-      
-      // Tentar buscar com DuckDuckGo
+      const results: WebSearchResult[] = []
+
       try {
-        const response = await fetch(`https://api.duckduckgo.com/?q=${searchQuery}&format=json&no_html=1&skip_disambig=1`)
-        const data = await response.json()
-        
-        const results: WebSearchResult[] = []
-        
-        // Adicionar resultado principal se existir
-        if (data.AbstractText) {
-          results.push({
-            title: data.Heading || webSearchQuery,
-            url: data.AbstractURL || `https://duckduckgo.com/?q=${searchQuery}`,
-            snippet: data.AbstractText,
+        const wikiRes = await fetch(
+          `https://pt.wikipedia.org/w/rest.php/v1/search/page?q=${searchQuery}&limit=5`
+        )
+        const wikiData = await wikiRes.json()
+        if (wikiData.pages) {
+          wikiData.pages.forEach((p: { key?: string; title: string; description?: string; excerpt?: string }) => {
+            const slug = p.key || p.title.replace(/ /g, '_')
+            results.push({
+              title: p.title,
+              url: `https://pt.wikipedia.org/wiki/${encodeURIComponent(slug)}`,
+              snippet: p.description || p.excerpt || '',
+              source: 'wikipedia',
+            })
           })
         }
-        
-        // Adicionar resultados relacionados
-        if (data.RelatedTopics && data.RelatedTopics.length > 0) {
-          data.RelatedTopics.slice(0, 3).forEach((topic: any) => {
-            if (topic.Text) {
-              results.push({
-                title: topic.Text.split(' - ')[0] || webSearchQuery,
-                url: topic.FirstURL || `https://duckduckgo.com/?q=${searchQuery}`,
-                snippet: topic.Text,
-              })
-            }
-          })
-        }
-        
-        if (results.length > 0) {
-          setWebSearchResults((prev) => [...prev, ...results])
-          toast({
-            title: 'Pesquisa concluída',
-            description: `${results.length} resultado(s) encontrado(s).`,
-          })
-        } else {
-          // Fallback: resultado genérico
-          const fallbackResult: WebSearchResult = {
-            title: `Pesquisa: ${webSearchQuery}`,
-            url: `https://duckduckgo.com/?q=${searchQuery}`,
-            snippet: `Clique para pesquisar "${webSearchQuery}" no DuckDuckGo e encontrar informações atualizadas.`,
-          }
-          setWebSearchResults((prev) => [...prev, fallbackResult])
-          toast({
-            title: 'Pesquisa realizada',
-            description: 'Resultado disponível. Clique no link para ver mais.',
-          })
-        }
-      } catch (apiError) {
-        // Fallback se API falhar
-        const fallbackResult: WebSearchResult = {
-          title: `Pesquisa: ${webSearchQuery}`,
-          url: `https://duckduckgo.com/?q=${encodeURIComponent(webSearchQuery)}`,
-          snippet: `Pesquise "${webSearchQuery}" no DuckDuckGo para encontrar informações atualizadas sobre este tópico jurídico.`,
-        }
-        setWebSearchResults((prev) => [...prev, fallbackResult])
-        toast({
-          title: 'Pesquisa realizada',
-          description: 'Link de pesquisa gerado. Clique para ver resultados.',
-        })
+      } catch {
+        // Wikipedia falhou, continuar
       }
-    } catch (error: any) {
+
+      results.push(
+        {
+          title: `Pesquisar no Google: ${webSearchQuery}`,
+          url: `https://www.google.com/search?q=${searchQuery}`,
+          snippet: 'Clique para abrir a pesquisa no Google',
+          source: 'google',
+        },
+        {
+          title: `Pesquisar no Bing: ${webSearchQuery}`,
+          url: `https://www.bing.com/search?q=${searchQuery}`,
+          snippet: 'Clique para abrir a pesquisa no Bing',
+          source: 'bing',
+        }
+      )
+
+      setWebSearchResults(results)
       toast({
-        title: 'Erro na pesquisa',
-        description: error.message || 'Erro ao pesquisar na web',
-        variant: 'destructive',
+        title: 'Pesquisa realizada',
+        description: results.length > 2 ? 'Wikipedia + links para Google e Bing.' : 'Links para Google e Bing.',
       })
+    } catch (error: any) {
+      toast({ title: 'Erro na pesquisa', description: error.message, variant: 'destructive' })
     } finally {
       setIsSearchingWeb(false)
     }
   }
 
+  const handleJurisprudenciaSearch = () => {
+    if (!jurisprudenciaQuery.trim()) {
+      toast({ title: 'Campo vazio', description: 'Digite o termo para pesquisar', variant: 'destructive' })
+      return
+    }
+    const q = encodeURIComponent(jurisprudenciaQuery.trim())
+    window.open(`https://www.jusbrasil.com.br/busca?q=${q}`, '_blank')
+    window.open(`https://www.lexml.gov.br/urn/search?q=${q}`, '_blank')
+    toast({
+      title: 'Pesquisa aberta',
+      description: 'Jusbrasil e LexML abertos em novas abas.',
+    })
+  }
+
+  const handleCriarGrupo = () => {
+    if (!novoGrupoNome.trim()) {
+      toast({ title: 'Nome vazio', description: 'Digite um nome para o grupo', variant: 'destructive' })
+      return
+    }
+    const docIds = documentos.map((_, i) => `doc-${i}`)
+    const modIds = modelos.map((_, i) => `mod-${i}`)
+    setGrupos((prev) => [
+      ...prev,
+      {
+        id: Date.now().toString(),
+        nome: novoGrupoNome.trim(),
+        documentoIds: docIds,
+        modeloIds: modIds,
+        createdAt: new Date().toISOString(),
+      },
+    ])
+    setNovoGrupoNome('')
+    toast({ title: 'Grupo criado', description: `"${novoGrupoNome.trim()}" com ${docIds.length} docs e ${modIds.length} modelos.` })
+  }
+
   const handleAtMenuSelect = (option: string) => {
-    const withoutAt = input.slice(0, -1)
-    setInput(`${withoutAt}${option} `)
+    setInput((prev) => prev.slice(0, -1) + option + ' ')
     setShowAtMenu(false)
   }
 
   const handleSlashMenuSelect = (option: string) => {
-    const withoutSlash = input.slice(0, -1)
-    setInput(`${withoutSlash}${option}`)
+    setInput((prev) => prev.slice(0, -1) + option)
     setShowSlashMenu(false)
   }
 
@@ -328,112 +384,140 @@ Quando o usuário pedir para aplicar mudanças, forneça o HTML formatado.`,
     { label: 'Reescrever', value: '/reescrever' },
     { label: 'Expandir', value: '/expandir' },
     { label: 'Resumir', value: '/resumir' },
+    { label: 'Corrigir gramática', value: '/corrigir' },
+    { label: 'Adicionar citação', value: '/citação' },
+    { label: 'Formalizar linguagem', value: '/formalizar' },
+    { label: 'Adicionar conclusão', value: '/conclusão' },
+    { label: 'Simplificar', value: '/simplificar' },
+    { label: 'Analisar', value: '/analisar' },
+    { label: 'Explicar trecho', value: '/explicar' },
   ]
 
   return (
-    <div className="flex h-full flex-col bg-white">
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full flex-col">
-        <TabsList className="!flex w-full flex-wrap rounded-none border-b shrink-0 overflow-x-auto !h-auto min-h-[48px] !bg-white !p-1">
-          <TabsTrigger value="chat" className="text-xs flex items-center gap-1">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-card">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full min-h-0 flex-col overflow-hidden">
+        <TabsList className="h-auto shrink-0 w-full flex-wrap justify-start gap-1 overflow-x-auto rounded-none border-b border-border bg-muted/40 p-2">
+          <TabsTrigger
+            value="chat"
+            className="gap-1.5 data-[state=active]:bg-fenix-navy/15 data-[state=active]:text-fenix-navy data-[state=active]:shadow-none dark:data-[state=active]:bg-fenix-purple-dark/25 dark:data-[state=active]:text-fenix-purple-light"
+          >
             <MessageSquare className="h-4 w-4" />
-            <span>Chat</span>
+            Chat
           </TabsTrigger>
-          <TabsTrigger value="documentos" className="text-xs flex items-center gap-1">
+          <TabsTrigger value="documentos" className="gap-1.5">
             <FileText className="h-4 w-4" />
-            <span>Docs</span>
+            Docs
           </TabsTrigger>
-          <TabsTrigger value="modelos" className="text-xs flex items-center gap-1">
+          <TabsTrigger value="modelos" className="gap-1.5">
             <FileCode className="h-4 w-4" />
-            <span>Modelos</span>
+            Modelos
           </TabsTrigger>
-          <TabsTrigger value="jurisprudencia" className="text-xs flex items-center gap-1">
+          <TabsTrigger value="jurisprudencia" className="gap-1.5">
             <Scale className="h-4 w-4" />
-            <span>Juris</span>
+            Juris
           </TabsTrigger>
-          <TabsTrigger value="web" className="text-xs flex items-center gap-1">
+          <TabsTrigger value="web" className="gap-1.5">
             <Globe className="h-4 w-4" />
-            <span>Web</span>
+            Web
           </TabsTrigger>
-          <TabsTrigger value="biblioteca" className="text-xs flex items-center gap-1">
+          <TabsTrigger value="biblioteca" className="gap-1.5">
             <Library className="h-4 w-4" />
-            <span>Biblio</span>
+            Biblio
           </TabsTrigger>
-          <TabsTrigger value="bibliotecarios" className="text-xs flex items-center gap-1">
+          <TabsTrigger value="bibliotecarios" className="gap-1.5">
             <Users className="h-4 w-4" />
-            <span>Grupos</span>
+            Grupos
           </TabsTrigger>
         </TabsList>
 
         {/* Chat Tab */}
-        <TabsContent value="chat" className="flex-1 flex flex-col !m-0 p-0 h-full">
-          <div className="p-4 border-b shrink-0" style={{ borderColor: '#101f2e', backgroundColor: '#101f2e' }}>
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-purple-400" />
+        <TabsContent value="chat" className="m-0 flex min-h-0 flex-1 flex-col overflow-hidden p-0">
+          <div className="shrink-0 border-b border-border bg-gradient-to-br from-fenix-navy/5 to-fenix-purple-dark/5 px-4 py-3 dark:from-fenix-navy/10 dark:to-fenix-purple-dark/10">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-fenix-purple-dark/20 to-fenix-purple-light/20 text-fenix-purple-dark dark:text-fenix-purple-light">
+                <Sparkles className="h-5 w-5" />
+              </div>
               <div>
-                <h3 className="font-semibold text-sm text-white">Assistente IA</h3>
-                <p className="text-xs" style={{ color: '#101f2e' }}>Digite "@" para recursos ou "/" para prompts</p>
+                <h3 className="font-semibold text-foreground">Assistente IA</h3>
+                <p className="text-xs text-muted-foreground">
+                  Modelo: {AI_MODEL} · <kbd className="rounded border px-1 font-mono text-[10px]">@</kbd> recursos ·{' '}
+                  <kbd className="rounded border px-1 font-mono text-[10px]">/</kbd> prompts
+                </p>
               </div>
             </div>
           </div>
+
           <div
             ref={messagesContainerRef}
-            className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4 messages-container"
-            style={{ minHeight: 0, maxHeight: '100%', backgroundColor: '#101f2e' }}
+            className="messages-container min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden p-4"
           >
             {messages.length === 0 && (
-              <div className="text-center text-sm mt-8 text-white">
-                <MessageSquare className="h-12 w-12 mx-auto mb-2 text-white" />
-                <p>Comece uma conversa com a IA</p>
-                <p className="text-xs mt-1">Dica: digite "@" para acessar recursos</p>
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
+                  <MessageSquare className="h-7 w-7 text-muted-foreground" />
+                </div>
+                <p className="text-sm font-medium text-foreground">Comece uma conversa</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Use / para prompts rápidos (melhorar, fundamentar, resumir...)
+                </p>
               </div>
             )}
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
+            {messages.map((message) => {
+              const canApply =
+                !readOnly &&
+                message.role === 'assistant' &&
+                message.userPrompt &&
+                promptDeveAplicar(message.userPrompt) &&
+                hasApplicableHtml(message.content)
+              return (
                 <div
-                  className={`max-w-[85%] rounded-lg p-3 break-words word-wrap ${
-                    message.role === 'user'
-                      ? 'bg-gradient-to-r from-purple-600 to-purple-700 text-white'
-                      : 'text-white border'
-                  }`}
-                  style={message.role === 'assistant' ? { backgroundColor: '#101f2e', borderColor: '#101f2e' } : {}}
+                  key={message.id}
+                  className={cn('flex min-w-0', message.role === 'user' ? 'justify-end' : 'justify-start')}
                 >
-                  <p className="text-sm whitespace-pre-wrap break-words overflow-wrap-anywhere">{message.content}</p>
-                  {message.role === 'assistant' && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="mt-2 h-7 text-xs border-purple-500/50 text-purple-300 hover:bg-purple-500/20 hover:text-purple-200"
-                      onClick={() => handleApplyContent(message.content)}
-                    >
-                      Aplicar no Editor
-                    </Button>
-                  )}
+                  <div
+                    className={cn(
+                      'min-w-0 max-w-[90%] shrink rounded-xl px-4 py-3',
+                      message.role === 'user'
+                        ? 'bg-gradient-to-r from-fenix-purple-dark to-fenix-purple-light text-white'
+                        : 'border border-border bg-muted/50'
+                    )}
+                  >
+                    <p className="break-words whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">
+                      {message.content}
+                    </p>
+                    {canApply && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-3 border-fenix-purple-dark/30 bg-transparent text-fenix-purple-dark hover:bg-fenix-purple-dark/10 dark:border-fenix-purple-light/40 dark:text-fenix-purple-light dark:hover:bg-fenix-purple-dark/20"
+                        onClick={() => handleApplyContent(message.content)}
+                      >
+                        Aplicar no Editor
+                      </Button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
             {isGenerating && (
               <div className="flex justify-start">
-                <div className="rounded-lg p-3 border" style={{ backgroundColor: '#101f2e', borderColor: '#101f2e' }}>
-                  <Loader2 className="h-4 w-4 animate-spin text-purple-400" />
+                <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/50 px-4 py-3">
+                  <Loader2 className="h-4 w-4 animate-spin text-fenix-purple-dark dark:text-fenix-purple-light" />
+                  <span className="text-sm text-muted-foreground">Pensando...</span>
                 </div>
               </div>
             )}
             <div ref={messagesEndRef} />
           </div>
-          <div className="p-4 border-t shrink-0 relative" style={{ borderColor: '#101f2e', backgroundColor: '#101f2e' }}>
-            {/* Menu @ */}
+
+          <div className="relative shrink-0 border-t border-border bg-card p-4">
             {showAtMenu && (
-              <div className="absolute bottom-full left-4 right-4 mb-2 bg-white border rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
+              <div className="absolute bottom-full left-4 right-4 z-10 mb-2 max-h-48 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
                 {atMenuOptions.map((option) => (
                   <button
                     key={option.value}
                     type="button"
-                    className="w-full text-left px-4 py-2 text-sm text-white"
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#101f2e'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm hover:bg-muted"
                     onClick={() => handleAtMenuSelect(option.value)}
                   >
                     {option.label}
@@ -441,16 +525,13 @@ Quando o usuário pedir para aplicar mudanças, forneça o HTML formatado.`,
                 ))}
               </div>
             )}
-            {/* Menu / */}
             {showSlashMenu && (
-              <div className="absolute bottom-full left-4 right-4 mb-2 bg-white border rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
+              <div className="absolute bottom-full left-4 right-4 z-10 mb-2 max-h-64 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
                 {slashMenuOptions.map((option) => (
                   <button
                     key={option.value}
                     type="button"
-                    className="w-full text-left px-4 py-2 text-sm text-white"
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#101f2e'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm hover:bg-muted"
                     onClick={() => handleSlashMenuSelect(option.value)}
                   >
                     {option.label}
@@ -458,7 +539,7 @@ Quando o usuário pedir para aplicar mudanças, forneça o HTML formatado.`,
                 ))}
               </div>
             )}
-            <div className="flex gap-2">
+            <div className="flex min-w-0 shrink-0 gap-2">
               <Input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -472,14 +553,13 @@ Quando o usuário pedir para aplicar mudanças, forneça o HTML formatado.`,
                     setShowSlashMenu(false)
                   }
                 }}
-                placeholder="Digite sua mensagem... (@ para recursos, / para prompts)"
-                className="flex-1 text-white focus:border-purple-500 focus:ring-purple-500/20"
-                style={{ backgroundColor: '#101f2e', borderColor: '#101f2e' }}
+                placeholder="Mensagem... (@ recursos, / prompts)"
+                className="min-w-0 flex-1"
               />
-              <Button 
-                onClick={handleSendMessage} 
+              <Button
+                onClick={handleSendMessage}
                 disabled={!input.trim() || isGenerating}
-                className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white border-0"
+                className="bg-gradient-to-r from-fenix-purple-dark to-fenix-purple-light text-white hover:opacity-95"
               >
                 <Send className="h-4 w-4" />
               </Button>
@@ -488,36 +568,37 @@ Quando o usuário pedir para aplicar mudanças, forneça o HTML formatado.`,
         </TabsContent>
 
         {/* Documentos Tab */}
-        <TabsContent value="documentos" className="flex-1 overflow-y-auto !m-0 p-4 min-h-0">
+        <TabsContent value="documentos" className="m-0 min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-4">
           <div className="space-y-4">
             <div>
-              <h3 className="font-semibold text-sm mb-2">Documentos</h3>
-              <p className="text-xs mb-4 text-white">
-                Adicione documentos relevantes para contexto da tese
+              <h3 className="font-semibold text-foreground">Documentos</h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Adicione textos de referência (.txt, .html). A IA usará como contexto.
               </p>
               <Button
                 variant="outline"
                 size="sm"
-                className="w-full"
+                className="mt-3 w-full"
                 onClick={() => {
-                  const input = document.createElement('input')
-                  input.type = 'file'
-                  input.multiple = true
-                  input.onchange = (e) => handleFileUpload((e.target as HTMLInputElement).files, 'documentos')
-                  input.click()
+                  const el = document.createElement('input')
+                  el.type = 'file'
+                  el.multiple = true
+                  el.accept = '.txt,.html,.md'
+                  el.onchange = (e) => handleFileUpload((e.target as HTMLInputElement).files, 'documentos')
+                  el.click()
                 }}
               >
-                <Upload className="h-4 w-4 mr-2" />
+                <Upload className="mr-2 h-4 w-4" />
                 Adicionar Documentos
               </Button>
             </div>
             <div className="space-y-2">
               {documentos.map((file, index) => (
                 <Card key={index}>
-                  <CardContent className="p-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <FileText className="h-4 w-4 text-primary shrink-0" />
-                      <span className="text-sm truncate">{file.name}</span>
+                  <CardContent className="flex items-center justify-between p-3">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <FileText className="h-4 w-4 shrink-0 text-fenix-purple-dark dark:text-fenix-purple-light" />
+                      <span className="truncate text-sm">{file.name}</span>
                     </div>
                     <Button
                       variant="ghost"
@@ -534,36 +615,37 @@ Quando o usuário pedir para aplicar mudanças, forneça o HTML formatado.`,
         </TabsContent>
 
         {/* Modelos Tab */}
-        <TabsContent value="modelos" className="flex-1 overflow-y-auto !m-0 p-4 min-h-0">
+        <TabsContent value="modelos" className="m-0 min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-4">
           <div className="space-y-4">
             <div>
-              <h3 className="font-semibold text-sm mb-2">Modelos</h3>
-              <p className="text-xs mb-4 text-white">
-                Adicione modelos para personalizar o estilo da IA
+              <h3 className="font-semibold text-foreground">Modelos</h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Adicione teses modelo (.txt, .html) para a IA imitar o estilo.
               </p>
               <Button
                 variant="outline"
                 size="sm"
-                className="w-full"
+                className="mt-3 w-full"
                 onClick={() => {
-                  const input = document.createElement('input')
-                  input.type = 'file'
-                  input.multiple = true
-                  input.onchange = (e) => handleFileUpload((e.target as HTMLInputElement).files, 'modelos')
-                  input.click()
+                  const el = document.createElement('input')
+                  el.type = 'file'
+                  el.multiple = true
+                  el.accept = '.txt,.html,.md'
+                  el.onchange = (e) => handleFileUpload((e.target as HTMLInputElement).files, 'modelos')
+                  el.click()
                 }}
               >
-                <Upload className="h-4 w-4 mr-2" />
+                <Upload className="mr-2 h-4 w-4" />
                 Adicionar Modelos
               </Button>
             </div>
             <div className="space-y-2">
               {modelos.map((file, index) => (
                 <Card key={index}>
-                  <CardContent className="p-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <FileCode className="h-4 w-4 text-primary shrink-0" />
-                      <span className="text-sm truncate">{file.name}</span>
+                  <CardContent className="flex items-center justify-between p-3">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <FileCode className="h-4 w-4 shrink-0 text-fenix-purple-dark dark:text-fenix-purple-light" />
+                      <span className="truncate text-sm">{file.name}</span>
                     </div>
                     <Button
                       variant="ghost"
@@ -580,56 +662,53 @@ Quando o usuário pedir para aplicar mudanças, forneça o HTML formatado.`,
         </TabsContent>
 
         {/* Jurisprudência Tab */}
-        <TabsContent value="jurisprudencia" className="flex-1 overflow-y-auto !m-0 p-4 min-h-0">
+        <TabsContent value="jurisprudencia" className="m-0 min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-4">
           <div className="space-y-4">
             <div>
-              <h3 className="font-semibold text-sm mb-2">Jurisprudência</h3>
-              <p className="text-xs mb-4 text-white">
-                Pesquise jurisprudência usando linguagem natural
+              <h3 className="font-semibold text-foreground">Jurisprudência</h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Pesquise em Jusbrasil e LexML (abre em nova aba)
               </p>
               <Input
-                placeholder="Ex: Responsabilidade civil danos morais..."
-                className="mb-2"
+                placeholder="Ex: Responsabilidade civil danos morais"
+                value={jurisprudenciaQuery}
+                onChange={(e) => setJurisprudenciaQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleJurisprudenciaSearch()}
+                className="mt-3"
               />
-              <Button size="sm" className="w-full">
-                <Scale className="h-4 w-4 mr-2" />
-                Pesquisar
+              <Button
+                size="sm"
+                className="mt-2 w-full bg-gradient-to-r from-fenix-purple-dark to-fenix-purple-light text-white"
+                onClick={handleJurisprudenciaSearch}
+              >
+                <Scale className="mr-2 h-4 w-4" />
+                Pesquisar Jusbrasil + LexML
               </Button>
-            </div>
-            <div className="space-y-2">
-              {_jurisprudencia.length === 0 && (
-                <p className="text-xs text-center py-4 text-white">
-                  Nenhuma jurisprudência selecionada
-                </p>
-              )}
             </div>
           </div>
         </TabsContent>
 
         {/* Web Tab */}
-        <TabsContent value="web" className="flex-1 overflow-y-auto !m-0 p-4 min-h-0">
+        <TabsContent value="web" className="m-0 min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-4">
           <div className="space-y-4">
             <div>
-              <h3 className="font-semibold text-sm mb-2">Pesquisa Web</h3>
-              <p className="text-xs mb-4 text-white">
-                Pesquise informações atualizadas em tempo real
+              <h3 className="font-semibold text-foreground">Pesquisa Web</h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Wikipedia + links para Google e Bing
               </p>
-              <div className="flex gap-2 mb-4">
+              <div className="mt-3 flex gap-2">
                 <Input
                   placeholder="Digite sua pesquisa..."
                   value={webSearchQuery}
                   onChange={(e) => setWebSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleWebSearch()
-                    }
-                  }}
-                  className="flex-1"
+                  onKeyDown={(e) => e.key === 'Enter' && handleWebSearch()}
+                  className="min-w-0 flex-1"
                 />
                 <Button
                   size="sm"
                   onClick={handleWebSearch}
                   disabled={!webSearchQuery.trim() || isSearchingWeb}
+                  className="shrink-0"
                 >
                   {isSearchingWeb ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -641,28 +720,31 @@ Quando o usuário pedir para aplicar mudanças, forneça o HTML formatado.`,
             </div>
             <div className="space-y-2">
               {webSearchResults.length === 0 && !isSearchingWeb && (
-                <p className="text-xs text-center py-4 text-white">
+                <p className="py-8 text-center text-sm text-muted-foreground">
                   Nenhuma pesquisa realizada ainda
                 </p>
               )}
               {isSearchingWeb && (
-                <div className="flex items-center justify-center py-4">
-                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                  <span className="ml-2 text-sm text-white">Pesquisando...</span>
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin text-fenix-purple-dark dark:text-fenix-purple-light" />
+                  <span className="text-sm text-muted-foreground">Pesquisando...</span>
                 </div>
               )}
               {webSearchResults.map((result, index) => (
                 <Card key={index}>
                   <CardContent className="p-3">
-                    <h4 className="font-semibold text-sm mb-1">{result.title}</h4>
-                    <p className="text-xs mb-2 text-white">{result.snippet}</p>
+                    <h4 className="font-semibold text-sm">{result.title}</h4>
+                    {result.snippet && (
+                      <p className="mt-1 text-xs text-muted-foreground">{result.snippet}</p>
+                    )}
                     <a
                       href={result.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs text-primary hover:underline"
+                      className="mt-2 flex items-center gap-1 text-xs text-fenix-purple-dark hover:underline dark:text-fenix-purple-light"
                     >
-                      {result.url}
+                      <ExternalLink className="h-3 w-3" />
+                      {result.source === 'wikipedia' ? 'Wikipedia' : result.url}
                     </a>
                   </CardContent>
                 </Card>
@@ -672,49 +754,82 @@ Quando o usuário pedir para aplicar mudanças, forneça o HTML formatado.`,
         </TabsContent>
 
         {/* Biblioteca Tab */}
-        <TabsContent value="biblioteca" className="flex-1 overflow-y-auto !m-0 p-4 min-h-0">
+        <TabsContent value="biblioteca" className="m-0 min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-4">
           <div className="space-y-4">
-            <div>
-              <h3 className="font-semibold text-sm mb-2">Biblioteca</h3>
-              <p className="text-xs mb-4 text-white">
-                Recursos organizados e acessíveis
-              </p>
-            </div>
+            <h3 className="font-semibold text-foreground">Biblioteca</h3>
+            <p className="text-xs text-muted-foreground">Visão geral dos recursos disponíveis</p>
             <div className="space-y-2">
-              <Card>
-                <CardContent className="p-3">
-                  <p className="text-sm font-medium">Documentos</p>
-                  <p className="text-xs text-white">{documentos.length} arquivo(s)</p>
+              <Card
+                className="cursor-pointer transition-colors hover:bg-muted/50"
+                onClick={() => setActiveTab('documentos')}
+              >
+                <CardContent className="flex items-center justify-between p-3">
+                  <span className="text-sm font-medium">Documentos</span>
+                  <span className="text-xs text-muted-foreground">{documentos.length} arquivo(s)</span>
                 </CardContent>
               </Card>
-              <Card>
-                <CardContent className="p-3">
-                  <p className="text-sm font-medium">Modelos</p>
-                  <p className="text-xs text-white">{modelos.length} arquivo(s)</p>
+              <Card
+                className="cursor-pointer transition-colors hover:bg-muted/50"
+                onClick={() => setActiveTab('modelos')}
+              >
+                <CardContent className="flex items-center justify-between p-3">
+                  <span className="text-sm font-medium">Modelos</span>
+                  <span className="text-xs text-muted-foreground">{modelos.length} arquivo(s)</span>
                 </CardContent>
               </Card>
-              <Card>
-                <CardContent className="p-3">
-                  <p className="text-sm font-medium">Pesquisas Web</p>
-                  <p className="text-xs text-white">{webSearchResults.length} resultado(s)</p>
+              <Card
+                className="cursor-pointer transition-colors hover:bg-muted/50"
+                onClick={() => setActiveTab('web')}
+              >
+                <CardContent className="flex items-center justify-between p-3">
+                  <span className="text-sm font-medium">Pesquisas Web</span>
+                  <span className="text-xs text-muted-foreground">{webSearchResults.length} resultado(s)</span>
                 </CardContent>
               </Card>
             </div>
           </div>
         </TabsContent>
 
-        {/* Bibliotecários Tab */}
-        <TabsContent value="bibliotecarios" className="flex-1 overflow-y-auto !m-0 p-4 min-h-0">
+        {/* Grupos Tab */}
+        <TabsContent value="bibliotecarios" className="m-0 min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-4">
           <div className="space-y-4">
-            <div>
-              <h3 className="font-semibold text-sm mb-2">Bibliotecários</h3>
-              <p className="text-xs mb-4 text-white">
-                Agrupe recursos para casos recorrentes
-              </p>
-              <Button variant="outline" size="sm" className="w-full">
-                <Users className="h-4 w-4 mr-2" />
-                Criar Grupo
+            <h3 className="font-semibold text-foreground">Grupos</h3>
+            <p className="text-xs text-muted-foreground">
+              Salve o conjunto atual de docs/modelos para casos recorrentes
+            </p>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Nome do grupo"
+                value={novoGrupoNome}
+                onChange={(e) => setNovoGrupoNome(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCriarGrupo()}
+              />
+              <Button size="sm" onClick={handleCriarGrupo} disabled={!novoGrupoNome.trim()}>
+                Criar
               </Button>
+            </div>
+            <div className="space-y-2">
+              {grupos.map((g) => (
+                <Card key={g.id}>
+                  <CardContent className="flex items-center justify-between p-3">
+                    <div>
+                      <p className="font-medium text-sm">{g.nome}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {g.documentoIds.length} docs, {g.modeloIds.length} modelos
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setGrupos((prev) => prev.filter((x) => x.id !== g.id))
+                      }
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           </div>
         </TabsContent>

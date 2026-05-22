@@ -85,10 +85,11 @@ export function useProfileById(id: string) {
   })
 }
 
-// Buscar todos os perfis (apenas admins)
-export function useProfiles() {
+// Buscar todos os perfis (RLS costuma restringir a admins)
+export function useProfiles(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['profiles'],
+    enabled: options?.enabled !== false,
     queryFn: async () => {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
       const url = `${supabaseUrl}/rest/v1/profiles?select=*&order=created_at.desc`
